@@ -1,0 +1,10 @@
+name: OraWorldRegen
+version: '1.0.0'
+main: oraserver.oraworldregen.OraWorldRegen
+api-version: '1.20'
+description: ワールド自動再生成プラグイン
+authors:
+  - OraServer
+depend:
+  - OraPluginAPI
+  - Multiverse-Core
