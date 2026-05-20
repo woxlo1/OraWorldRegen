@@ -22,6 +22,31 @@ class ConfigManager(private val plugin: OraWorldRegen) {
             val crons = ws.getMapList("schedules")
                 .mapNotNull { it["cron"]?.toString() }
 
+            // post-regen-commands
+            val postCmds = ws.getStringList("post-regen-commands")
+
+            // backup
+            val backupSec = ws.getConfigurationSection("backup")
+            val backupEnabled  = backupSec?.getBoolean("enabled", false) ?: false
+            val backupDir      = backupSec?.getString("directory", "backups") ?: "backups"
+            val backupMaxCount = backupSec?.getInt("max-count", 5) ?: 5
+
+            // border
+            val borderSec     = ws.getConfigurationSection("world-border")
+            val borderEnabled = borderSec?.getBoolean("enabled", false) ?: false
+            val borderSize    = borderSec?.getDouble("size", 2000.0) ?: 2000.0
+            val borderCX      = borderSec?.getDouble("center-x", 0.0) ?: 0.0
+            val borderCZ      = borderSec?.getDouble("center-z", 0.0) ?: 0.0
+            val borderDmgAmt  = borderSec?.getDouble("damage-amount", 0.2) ?: 0.2
+            val borderDmgBuf  = borderSec?.getDouble("damage-buffer", 5.0) ?: 5.0
+            val borderWarnDis = borderSec?.getInt("warning-distance", 5) ?: 5
+            val borderWarnTim = borderSec?.getInt("warning-time", 15) ?: 15
+
+            // return players
+            val returnSec     = ws.getConfigurationSection("return-players")
+            val returnEnabled = returnSec?.getBoolean("enabled", true) ?: true
+            val returnDelay   = returnSec?.getLong("delay-seconds", 60L) ?: 60L
+
             worldConfigs[key] = WorldRegenConfig(
                 worldName           = key,
                 multiverseWorldName = ws.getString("multiverse-world-name", key)!!,
@@ -32,7 +57,25 @@ class ConfigManager(private val plugin: OraWorldRegen) {
                 cronSchedules       = crons,
                 countdownSeconds    = ws.getInt("countdown-seconds", 300),
                 fallbackWorld       = ws.getString("fallback-world", "world")!!,
-                enabled             = ws.getBoolean("enabled", true)
+                enabled             = ws.getBoolean("enabled", true),
+
+                backupEnabled  = backupEnabled,
+                backupDirectory = backupDir,
+                backupMaxCount  = backupMaxCount,
+
+                postRegenCommands = postCmds,
+
+                borderEnabled         = borderEnabled,
+                borderSize            = borderSize,
+                borderCenterX         = borderCX,
+                borderCenterZ         = borderCZ,
+                borderDamageAmount    = borderDmgAmt,
+                borderDamageBuffer    = borderDmgBuf,
+                borderWarningDistance = borderWarnDis,
+                borderWarningTime     = borderWarnTim,
+
+                returnPlayersAfterRegen = returnEnabled,
+                returnDelay             = returnDelay
             )
         }
 

@@ -9,13 +9,11 @@ import org.bukkit.entity.Player
 
 /**
  * メインメニュー GUI
- * 登録ワールドの一覧・ステータス表示・手動再生成・設定変更
  */
 class MainMenuGui(private val oraplugin: OraWorldRegen) :
     OraInventory(oraplugin, "§e§lOraWorldRegen §7- §fメインメニュー", 6) {
 
     override fun onOpen(player: Player): Boolean {
-        // 背景
         fill(OraInventoryItem(Material.GRAY_STAINED_GLASS_PANE)
             .setDisplayName("§r")
             .setCanClick(false))
@@ -30,28 +28,30 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
             return true
         }
 
-        // ワールドボタンを並べる（最大 9×4 = 36 個、行 1〜4）
         var slot = 10
         worlds.entries.forEachIndexed { index, (worldName, config) ->
-            if (index >= 28) return@forEachIndexed // 最大28ワールドまで表示
+            if (index >= 28) return@forEachIndexed
 
             val activeTask = oraplugin.regenManager.tasks[worldName]
             val statusColor = when {
-                !config.enabled          -> "§8"
-                activeTask != null       -> "§e"
-                else                     -> "§a"
+                !config.enabled                              -> "§8"
+                activeTask?.status == RegenStatus.QUEUED     -> "§b"
+                activeTask != null                           -> "§e"
+                else                                         -> "§a"
             }
             val statusText = when {
-                !config.enabled          -> "§8無効"
-                activeTask != null       -> "§e${activeTask.status.displayName}"
-                else                     -> "§a待機中"
+                !config.enabled                              -> "§8無効"
+                activeTask?.status == RegenStatus.QUEUED     -> "§bキュー待機中"
+                activeTask != null                           -> "§e${activeTask.status.displayName}"
+                else                                         -> "§a待機中"
             }
 
             val material = when {
-                !config.enabled          -> Material.RED_WOOL
-                activeTask?.status == RegenStatus.COUNTDOWN -> Material.YELLOW_WOOL
-                activeTask != null       -> Material.ORANGE_WOOL
-                else                     -> Material.GREEN_WOOL
+                !config.enabled                              -> Material.RED_WOOL
+                activeTask?.status == RegenStatus.QUEUED     -> Material.CYAN_WOOL
+                activeTask?.status == RegenStatus.COUNTDOWN  -> Material.YELLOW_WOOL
+                activeTask != null                           -> Material.ORANGE_WOOL
+                else                                         -> Material.GREEN_WOOL
             }
 
             val lore = buildList {
@@ -59,6 +59,9 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
                 add("§7環境: §f${config.environment.name}")
                 add("§7退避先: §f${config.fallbackWorld}")
                 add("§7カウントダウン: §f${config.countdownSeconds}秒")
+                if (config.backupEnabled)  add("§7バックアップ: §a有効")
+                if (config.borderEnabled)  add("§7ボーダー: §a${config.borderSize.toInt()}×${config.borderSize.toInt()}")
+                if (config.returnPlayersAfterRegen) add("§7帰還: §a有効 (${config.returnDelay}秒後)")
                 if (config.cronSchedules.isNotEmpty()) {
                     add("§7スケジュール: §f${config.cronSchedules.joinToString(", ")}")
                 }
@@ -67,16 +70,21 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
                     it.failReason?.let { r -> add("§c失敗理由: $r") }
                 }
                 add("")
-                if (!config.enabled) {
-                    add("§8クリックで詳細を表示")
-                } else if (activeTask != null && activeTask.status == RegenStatus.COUNTDOWN) {
-                    add("§e左クリック: §f詳細を表示")
-                    add("§c右クリック: §fカウントダウンをキャンセル")
-                } else if (activeTask == null) {
-                    add("§e左クリック: §f詳細を表示")
-                    add("§a右クリック: §f今すぐ再生成")
-                } else {
-                    add("§7再生成中は操作できません")
+                when {
+                    !config.enabled -> add("§8クリックで詳細を表示")
+                    activeTask?.status == RegenStatus.QUEUED -> {
+                        add("§e左クリック: §f詳細を表示")
+                        add("§c右クリック: §fキューから削除")
+                    }
+                    activeTask?.status == RegenStatus.COUNTDOWN -> {
+                        add("§e左クリック: §f詳細を表示")
+                        add("§c右クリック: §fカウントダウンをキャンセル")
+                    }
+                    activeTask == null -> {
+                        add("§e左クリック: §f詳細を表示")
+                        add("§a右クリック: §f今すぐ再生成")
+                    }
+                    else -> add("§7再生成中は操作できません")
                 }
             }
 
@@ -90,7 +98,13 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
                             !config.enabled -> {
                                 player.sendMessage("${OraWorldRegen.PREFIX}§c${worldName} は無効化されています。")
                             }
-                            task != null && task.status == RegenStatus.COUNTDOWN -> {
+                            task?.status == RegenStatus.QUEUED -> {
+                                oraplugin.regenManager.cancelRegen(worldName)
+                                player.sendMessage("${OraWorldRegen.PREFIX}§e${worldName} §fをキューから削除しました。")
+                                player.closeInventory()
+                                open(player)
+                            }
+                            task?.status == RegenStatus.COUNTDOWN -> {
                                 val cancelled = oraplugin.regenManager.cancelRegen(worldName)
                                 if (cancelled) {
                                     player.sendMessage("${OraWorldRegen.PREFIX}§e${worldName} §fのカウントダウンをキャンセルしました。")
@@ -104,7 +118,6 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
                             }
                         }
                     } else {
-                        // 左クリック → 詳細画面
                         player.closeInventory()
                         WorldDetailGui(oraplugin, worldName, player, this).open(player)
                     }
@@ -112,12 +125,10 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
 
             setItem(slot, item)
 
-            // 行をスキップして9列ごとに整列
             slot++
-            if ((slot % 9) == 8) slot += 2 // 端のスロットを飛ばす
+            if ((slot % 9) == 8) slot += 2
         }
 
-        // 下部バー
         setBottomBar(player)
         return true
     }
@@ -126,6 +137,15 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
         val barBg = OraInventoryItem(Material.BLACK_STAINED_GLASS_PANE)
             .setDisplayName("§r").setCanClick(false)
         (45..53).forEach { setItem(it, barBg) }
+
+        // キュー情報
+        val queue = oraplugin.regenManager.getQueue()
+        if (queue.isNotEmpty()) {
+            setItem(46, OraInventoryItem(Material.HOPPER)
+                .setDisplayName("§e§lキュー: ${queue.size}件")
+                .addLore(queue.mapIndexed { i, w -> "§7${i + 1}. §e$w" })
+                .setCanClick(false))
+        }
 
         // 再読み込みボタン
         setItem(48, OraInventoryItem(Material.COMPARATOR)
@@ -144,6 +164,7 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
             .addLore(
                 "§7ワールド数: §f${oraplugin.configManager.worldConfigs.size}",
                 "§7再生成中: §f${if (oraplugin.regenManager.isAnyRegenerating()) "§c${oraplugin.regenManager.tasks.size}件" else "§aなし"}",
+                "§7キュー: §f${if (queue.isNotEmpty()) "§e${queue.size}件" else "§aなし"}",
                 "§7WL状態: §f${if (oraplugin.whitelistManager.isBlocking) "§c有効（再生成中）" else "§a無効"}"
             )
             .setCanClick(false))

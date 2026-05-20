@@ -7,7 +7,6 @@ import java.time.ZoneId
 
 class ScheduleManager(private val plugin: OraWorldRegen) {
 
-    // worldName -> List<CronParser>
     private val parsedCrons = HashMap<String, List<CronParser>>()
     private var pollingTask: BukkitTask? = null
 
@@ -47,7 +46,7 @@ class ScheduleManager(private val plugin: OraWorldRegen) {
 
         pollingTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable {
             checkSchedules()
-        }, 0L, 1200L) // 毎分
+        }, 0L, 1200L)
 
         plugin.logger.info("スケジュールポーリング開始 (${parsedCrons.size} ワールド)")
     }

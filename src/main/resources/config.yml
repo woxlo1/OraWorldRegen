@@ -1,17 +1,55 @@
 # OraWorldRegen 設定ファイル
+# ════════════════════════════════════════════════════════════
+#  worlds.<name> : ワールドごとの設定
+# ════════════════════════════════════════════════════════════
 worlds:
   resources:
+    # Multiverse-Core に登録されているワールド名
     multiverse-world-name: "resources"
-    environment: NORMAL
-    world-type: NORMAL
-    seed: ""
-    generator: ""
-    enabled: true
-    countdown-seconds: 300
-    fallback-world: "world"
-    schedules:
-      - cron: "0 4 * * 0"   # 毎週日曜 AM4:00
+    environment: NORMAL          # NORMAL / NETHER / THE_END
+    world-type: NORMAL           # NORMAL / FLAT / AMPLIFIED / LARGE_BIOMES
+    seed: ""                     # 空欄でランダム
+    generator: ""                # 空欄でバニラ
 
+    enabled: true
+    countdown-seconds: 300       # 再生成前カウントダウン(秒)。0で即実行
+    fallback-world: "world"      # 退避先ワールド
+
+    # ── スケジュール ───────────────────────────────────────
+    schedules:
+      - cron: "0 4 * * 0"       # 毎週日曜 AM4:00
+
+    # ── バックアップ ───────────────────────────────────────
+    backup:
+      enabled: false             # true: 削除前に zip バックアップを作成
+      directory: "backups"       # プラグインフォルダからの相対パス (絶対パスも可)
+      max-count: 5               # 保持するバックアップ最大数(超えた古いものを削除)
+
+    # ── ワールドボーダー ───────────────────────────────────
+    world-border:
+      enabled: false             # true: 再生成後にボーダーを設定
+      size: 2000.0               # ボーダー直径 (例: 1000 → 1000×1000)
+      center-x: 0.0
+      center-z: 0.0
+      damage-amount: 0.2         # ボーダー外ダメージ量/秒
+      damage-buffer: 5.0         # ダメージ開始バッファ(m)
+      warning-distance: 5        # 警告表示距離(m)
+      warning-time: 15           # 警告表示時間(秒)
+
+    # ── 再生成後コマンド ───────────────────────────────────
+    # {world} / {mv_world} でワールド名に置換されます
+    post-regen-commands:
+      - "mv modify set gamemode survival {world}"
+      # - "mv modify set difficulty normal {world}"
+
+    # ── プレイヤー帰還 ─────────────────────────────────────
+    return-players:
+      enabled: true              # true: 再生成完了後にプレイヤーを元の場所へ戻す
+      delay-seconds: 60          # 完了後何秒後に戻すか
+
+# ════════════════════════════════════════════════════════════
+#  settings : グローバル設定
+# ════════════════════════════════════════════════════════════
 settings:
   notify-at-seconds: [300, 120, 60, 30, 10, 5, 4, 3, 2, 1]
   timezone: "Asia/Tokyo"

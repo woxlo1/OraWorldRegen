@@ -2,6 +2,8 @@ package oraserver.oraworldregen
 
 import oraserver.oraworldregen.command.OraWorldRegenCommand
 import oraserver.oraworldregen.config.ConfigManager
+import oraserver.oraworldregen.manager.BackupManager
+import oraserver.oraworldregen.manager.HistoryManager
 import oraserver.oraworldregen.manager.MultiverseHook
 import oraserver.oraworldregen.manager.RegenManager
 import oraserver.oraworldregen.manager.WhitelistManager
@@ -15,7 +17,6 @@ import oraserver.orapluginapi.OraPlugin
 class OraWorldRegen : OraPlugin() {
 
     companion object {
-        /** チャットプレフィックス（Javaプラグインからも使えるよう static） */
         const val PREFIX = "§e§l[§6§lOraWorldRegen§e§l] §r"
 
         lateinit var instance: OraWorldRegen
@@ -32,6 +33,10 @@ class OraWorldRegen : OraPlugin() {
         private set
     lateinit var scheduleManager: ScheduleManager
         private set
+    lateinit var historyManager: HistoryManager
+        private set
+    lateinit var backupManager: BackupManager
+        private set
 
     override fun requiredPlugins() = listOf("Multiverse-Core")
 
@@ -45,8 +50,11 @@ class OraWorldRegen : OraPlugin() {
         regenManager     = RegenManager(this)
         whitelistManager = WhitelistManager(this)
         scheduleManager  = ScheduleManager(this)
+        historyManager   = HistoryManager(this)
+        backupManager    = BackupManager(this)
 
         configManager.load()
+        historyManager.load()
 
         // Multiverse 確認
         if (!multiverseHook.isAvailable) {
@@ -59,7 +67,7 @@ class OraWorldRegen : OraPlugin() {
         // スケジュール起動
         scheduleManager.loadAll()
 
-        // コマンド登録（OraCommandAPI）
+        // コマンド登録
         OraWorldRegenCommand(this).register()
 
         logger.info("OraWorldRegen v${pluginMeta.version} が有効化されました！")
@@ -78,8 +86,7 @@ class OraWorldRegen : OraPlugin() {
         scheduleManager.loadAll()
     }
 
-    /** 外部から呼び出せるリロードメソッド */
     fun reloadPlugin() {
-        reload() // OraPlugin.reload() を呼ぶ
+        reload()
     }
 }

@@ -14,14 +14,12 @@ class MultiverseHook(private val plugin: OraWorldRegen) {
 
     val isAvailable get() = mv != null
 
-    /** ワールドを Bukkit + Multiverse からアンロード（ファイルは残す） */
     fun unloadWorld(worldName: String): Boolean {
         val world = plugin.server.getWorld(worldName)
         if (world != null) plugin.server.unloadWorld(world, true)
         return mv?.mvWorldManager?.removeWorldFromConfig(worldName) ?: false
     }
 
-    /** ワールドを Multiverse 経由で新規作成 */
     fun importWorld(config: WorldRegenConfig): Boolean {
         val gen  = config.generator.ifBlank { null }
         val seed = config.seed.ifBlank { null }

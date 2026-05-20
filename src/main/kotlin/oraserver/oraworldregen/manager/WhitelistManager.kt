@@ -1,14 +1,9 @@
 package oraserver.oraworldregen.manager
 
 import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import oraserver.oraworldregen.OraWorldRegen
 import org.bukkit.Bukkit
 
-/**
- * 再生成中のサーバーアクセス制御。
- * バニラのホワイトリストを使用。OP は常に入れる（バニラ仕様）。
- */
 class WhitelistManager(private val plugin: OraWorldRegen) {
 
     private var prevWhitelist = false
@@ -27,7 +22,6 @@ class WhitelistManager(private val plugin: OraWorldRegen) {
 
         plugin.logger.info("ホワイトリストを有効化しました（再生成中）")
 
-        // OP でない & ホワイトリスト未登録のプレイヤーをキック
         val kickMsg = Component.text()
             .append(Component.text("§e§lOraWorldRegen\n\n"))
             .append(Component.text("§fただいまワールド再生成中です。\n"))
