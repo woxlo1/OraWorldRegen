@@ -50,6 +50,13 @@ kotlin { jvmToolchain(17) }
 
 shadowJar {
     archiveFileName = "OraWorldRegen-${project.version}.jar"
+    // OraPlugin.jar側のクラスと重複するので除外
+    exclude 'oraserver/orapluginapi/**'
+    exclude 'oraserver/orapluginapi/commandapi/**'
+    exclude 'kotlin/**'
+    exclude 'kotlinx/**'
+    exclude 'org/jetbrains/**'
+    exclude 'META-INF/kotlin*'
 }
 
 processResources {
