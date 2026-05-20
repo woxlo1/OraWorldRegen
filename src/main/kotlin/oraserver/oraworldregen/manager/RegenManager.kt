@@ -336,7 +336,8 @@ class RegenManager(private val plugin: OraWorldRegen) {
             task.playerReturnLocations.forEach { (uuid, oldLoc) ->
                 val player = Bukkit.getPlayer(uuid) ?: return@forEach
                 // 元の位置のワールドが再生成されたワールドなら戻す
-                val targetLoc = if (oldLoc.world?.name == config.multiverseWorldName) {
+                val oldWorldName = oldLoc.world?.name
+                val targetLoc = if (oldWorldName == config.multiverseWorldName) {
                     // 再生成されたワールドのスポーンに戻す（旧座標は無効なため）
                     regenWorld.spawnLocation
                 } else {
