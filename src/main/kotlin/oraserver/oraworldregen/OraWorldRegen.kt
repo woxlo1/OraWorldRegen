@@ -60,7 +60,7 @@ class OraWorldRegen : OraPlugin() {
         scheduleManager.loadAll()
 
         // コマンド登録（OraCommandAPI）
-        OraWorldRegenCommand(this)
+        OraWorldRegenCommand(this).register()
 
         logger.info("OraWorldRegen v${description.version} が有効化されました！")
     }

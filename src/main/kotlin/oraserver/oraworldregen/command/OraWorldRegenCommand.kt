@@ -3,87 +3,114 @@ package oraserver.oraworldregen.command
 import oraserver.oraworldregen.OraWorldRegen
 import oraserver.oraworldregen.gui.MainMenuGui
 import oraserver.oraworldregen.model.RegenStatus
-import oraserver.orapluginapi.annotation.OraCommandBody
-import oraserver.orapluginapi.command.OraCommand
 import oraserver.orapluginapi.command.OraCommandObject
 import oraserver.orapluginapi.commandapi.ToolTip
 import oraserver.orapluginapi.commandapi.argumenttype.StringArg
 import org.bukkit.entity.Player
 
-class OraWorldRegenCommand(plugin: OraWorldRegen) : OraCommand("owr") {
+/**
+ * OraWorldRegen コマンド登録クラス
+ */
+class OraWorldRegenCommand(private val plugin: OraWorldRegen) {
 
-    @OraCommandBody(asRoot = true)
-    val mainCommand = OraCommandObject {
+    private val commandObject = OraCommandObject {
 
-        // /owr → GUI を開く（プレイヤーのみ）
+        // ─── ルートリテラル: /owr ───────────────────────────────────────
         literal("owr") {
             setPermission("oraworldregen.admin")
+
+            // /owr → GUI を開く（プレイヤーのみ）
             setPlayerExecutor { data ->
                 MainMenuGui(plugin).open(data.sender)
             }
 
-            // /owr gui
+            // ── /owr gui ──────────────────────────────────────────────
             literal("gui") {
+                setPermission("oraworldregen.admin")
                 setPlayerExecutor { data ->
                     MainMenuGui(plugin).open(data.sender)
                 }
             }
 
-            // /owr start <world>
+            // ── /owr start <world> ────────────────────────────────────
             literal("start") {
+                setPermission("oraworldregen.admin")
+
                 argument("world", StringArg.word()) {
                     suggest({ _, _, _ ->
                         plugin.configManager.worldConfigs.keys.map { ToolTip(it) }
                     })
+
                     setExecutor { data ->
                         val worldName = data.getArgument("world", String::class.java)
                         val config = plugin.configManager.worldConfigs[worldName]
+
                         if (config == null) {
-                            data.sender.sendMessage("${OraWorldRegen.PREFIX}§cワールド §e${worldName} §cは登録されていません。")
+                            data.sender.sendMessage(
+                                "${OraWorldRegen.PREFIX}§cワールド §e${worldName} §cは登録されていません。"
+                            )
                             return@setExecutor
                         }
                         if (plugin.regenManager.isRegenerating(worldName)) {
-                            data.sender.sendMessage("${OraWorldRegen.PREFIX}§e${worldName} §fは現在再生成中です。")
+                            data.sender.sendMessage(
+                                "${OraWorldRegen.PREFIX}§e${worldName} §fは現在再生成中です。"
+                            )
                             return@setExecutor
                         }
-                        // プレイヤーなら確認GUI、コンソールは直接実行
+
                         val sender = data.sender
                         if (sender is Player) {
+                            // プレイヤーは確認 GUI へ誘導
                             MainMenuGui(plugin).open(sender)
                             sender.sendMessage("${OraWorldRegen.PREFIX}§fGUIから再生成を開始してください。")
                         } else {
+                            // コンソールは直接実行
                             plugin.regenManager.startRegen(worldName)
-                            sender.sendMessage("${OraWorldRegen.PREFIX}§e${worldName} §fの再生成を開始しました。")
+                            sender.sendMessage(
+                                "${OraWorldRegen.PREFIX}§e${worldName} §fの再生成を開始しました。"
+                            )
                         }
                     }
                 }
             }
 
-            // /owr cancel <world>
+            // ── /owr cancel <world> ───────────────────────────────────
             literal("cancel") {
+                setPermission("oraworldregen.admin")
+
                 argument("world", StringArg.word()) {
                     suggest({ _, _, _ ->
                         plugin.regenManager.tasks.keys.map { ToolTip(it) }
                     })
+
                     setExecutor { data ->
                         val worldName = data.getArgument("world", String::class.java)
                         val cancelled = plugin.regenManager.cancelRegen(worldName)
+
                         if (cancelled) {
-                            data.sender.sendMessage("${OraWorldRegen.PREFIX}§e${worldName} §fのカウントダウンをキャンセルしました。")
+                            data.sender.sendMessage(
+                                "${OraWorldRegen.PREFIX}§e${worldName} §fのカウントダウンをキャンセルしました。"
+                            )
                         } else {
                             val task = plugin.regenManager.tasks[worldName]
                             if (task == null) {
-                                data.sender.sendMessage("${OraWorldRegen.PREFIX}§e${worldName} §fは現在再生成中ではありません。")
+                                data.sender.sendMessage(
+                                    "${OraWorldRegen.PREFIX}§e${worldName} §fは現在再生成中ではありません。"
+                                )
                             } else {
-                                data.sender.sendMessage("${OraWorldRegen.PREFIX}§cカウントダウン以外のフェーズはキャンセルできません。§7(${task.status.displayName})")
+                                data.sender.sendMessage(
+                                    "${OraWorldRegen.PREFIX}§cカウントダウン以外のフェーズはキャンセルできません。§7(${task.status.displayName})"
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // /owr status
+            // ── /owr status ───────────────────────────────────────────
             literal("status") {
+                setPermission("oraworldregen.admin")
+
                 setExecutor { data ->
                     val sender = data.sender
                     sender.sendMessage("§8§m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -104,20 +131,28 @@ class OraWorldRegenCommand(plugin: OraWorldRegen) : OraCommand("owr") {
                             sender.sendMessage(" §7◆ §e${worldName} §8│ §f$statusText")
                             if (task != null) {
                                 sender.sendMessage("   §8└ §7経過: §f${task.elapsedSeconds}秒")
-                                task.failReason?.let { sender.sendMessage("   §8└ §c失敗: $it") }
+                                task.failReason?.let {
+                                    sender.sendMessage("   §8└ §c失敗: $it")
+                                }
                             } else if (config.cronSchedules.isNotEmpty()) {
-                                sender.sendMessage("   §8└ §7スケジュール: §f${config.cronSchedules.joinToString(", ")}")
+                                sender.sendMessage(
+                                    "   §8└ §7スケジュール: §f${config.cronSchedules.joinToString(", ")}"
+                                )
                             }
                         }
                     }
 
-                    sender.sendMessage(" §7ホワイトリスト: ${if (plugin.whitelistManager.isBlocking) "§c有効（再生成中）" else "§a無効"}")
+                    val wlStatus = if (plugin.whitelistManager.isBlocking)
+                        "§c有効（再生成中）" else "§a無効"
+                    sender.sendMessage(" §7ホワイトリスト: $wlStatus")
                     sender.sendMessage("§8§m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                 }
             }
 
-            // /owr list
+            // ── /owr list ─────────────────────────────────────────────
             literal("list") {
+                setPermission("oraworldregen.admin")
+
                 setExecutor { data ->
                     val sender = data.sender
                     sender.sendMessage("§8§m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -129,33 +164,45 @@ class OraWorldRegenCommand(plugin: OraWorldRegen) : OraCommand("owr") {
                         sender.sendMessage(" §7登録されているワールドはありません。")
                     } else {
                         configs.forEach { (worldName, config) ->
-                            val cronStr = config.cronSchedules.joinToString(", ").ifEmpty { "(スケジュールなし)" }
+                            val cronStr = config.cronSchedules
+                                .joinToString(", ")
+                                .ifEmpty { "(スケジュールなし)" }
                             if (config.enabled) {
                                 sender.sendMessage(" §a✔ §e${worldName} §8│ §7${cronStr}")
                             } else {
                                 sender.sendMessage(" §c✘ §7${worldName} §8│ §7${cronStr} §c(無効)")
                             }
-                            sender.sendMessage("   §8└ §7環境:§f${config.environment.name}  退避先:§f${config.fallbackWorld}  CD:§f${config.countdownSeconds}秒")
+                            sender.sendMessage(
+                                "   §8└ §7環境:§f${config.environment.name}" +
+                                        "  退避先:§f${config.fallbackWorld}" +
+                                        "  CD:§f${config.countdownSeconds}秒"
+                            )
                         }
                     }
                     sender.sendMessage("§8§m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                 }
             }
 
-            // /owr reload
+            // ── /owr reload ───────────────────────────────────────────
             literal("reload") {
+                setPermission("oraworldregen.admin")
+
                 setExecutor { data ->
                     try {
                         plugin.reloadPlugin()
                         data.sender.sendMessage("${OraWorldRegen.PREFIX}§a設定を再読み込みしました。")
                     } catch (e: Exception) {
-                        data.sender.sendMessage("${OraWorldRegen.PREFIX}§c再読み込みに失敗しました: §7${e.message}")
+                        data.sender.sendMessage(
+                            "${OraWorldRegen.PREFIX}§c再読み込みに失敗しました: §7${e.message}"
+                        )
                     }
                 }
             }
 
-            // /owr help
+            // ── /owr help ─────────────────────────────────────────────
             literal("help") {
+                setPermission("oraworldregen.admin")
+
                 setExecutor { data ->
                     val s = data.sender
                     s.sendMessage("§e§lOra§6§lWorld§e§lRegen §7| §7v${plugin.description.version}")
@@ -170,5 +217,13 @@ class OraWorldRegenCommand(plugin: OraWorldRegen) : OraCommand("owr") {
                 }
             }
         }
+    }
+
+    /**
+     * コマンドをサーバーに登録する。
+     * OraWorldRegen.onStart() の最後で呼ぶこと。
+     */
+    fun register() {
+        commandObject.register()
     }
 }
