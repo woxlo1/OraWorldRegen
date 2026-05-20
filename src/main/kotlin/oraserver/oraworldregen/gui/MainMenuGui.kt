@@ -140,7 +140,7 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
 
         // 情報ボタン
         setItem(49, OraInventoryItem(Material.BOOK)
-            .setDisplayName("§b§lOraWorldRegen §7v${oraplugin.description.version}")
+            .setDisplayName("§b§lOraWorldRegen §7v${oraplugin.pluginMeta.version}")
             .addLore(
                 "§7ワールド数: §f${oraplugin.configManager.worldConfigs.size}",
                 "§7再生成中: §f${if (oraplugin.regenManager.isAnyRegenerating()) "§c${oraplugin.regenManager.tasks.size}件" else "§aなし"}",

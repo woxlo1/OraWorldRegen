@@ -62,7 +62,7 @@ class OraWorldRegen : OraPlugin() {
         // コマンド登録（OraCommandAPI）
         OraWorldRegenCommand(this).register()
 
-        logger.info("OraWorldRegen v${description.version} が有効化されました！")
+        logger.info("OraWorldRegen v${pluginMeta.version} が有効化されました！")
     }
 
     override fun onEnd() {

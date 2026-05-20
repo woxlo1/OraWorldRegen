@@ -205,7 +205,7 @@ class OraWorldRegenCommand(private val plugin: OraWorldRegen) {
 
                 setExecutor { data ->
                     val s = data.sender
-                    s.sendMessage("§e§lOra§6§lWorld§e§lRegen §7| §7v${plugin.description.version}")
+                    s.sendMessage("§e§lOra§6§lWorld§e§lRegen §7| §7v${plugin.pluginMeta.version}")
                     s.sendMessage("§6/owr             §8» §7GUI を開く")
                     s.sendMessage("§6/owr gui         §8» §7メインメニューを開く")
                     s.sendMessage("§6/owr start §e<W>  §8» §7ワールドの再生成を開始")
