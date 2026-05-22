@@ -80,6 +80,21 @@ class GateManager(private val plugin: OraWorldRegen) {
         val world = Bukkit.getWorld(gate.worldName)
             ?: throw IllegalStateException("ワールドが見つかりません: ${gate.worldName}")
 
+        val minChunkX = minOf(gate.x1, gate.x2) shr 4
+        val maxChunkX = maxOf(gate.x1, gate.x2) shr 4
+        val minChunkZ = minOf(gate.z1, gate.z2) shr 4
+        val maxChunkZ = maxOf(gate.z1, gate.z2) shr 4
+
+        for (cx in minChunkX..maxChunkX) {
+            for (cz in minChunkZ..maxChunkZ) {
+                val chunk = world.getChunkAt(cx, cz)
+
+                if (!chunk.isLoaded) {
+                    chunk.load(true)
+                }
+            }
+        }
+
         val frameMat = parseMaterial(gate.frameBlock, Material.OBSIDIAN)
         val portalMat = parseMaterial(gate.portalBlock, Material.WATER)
 

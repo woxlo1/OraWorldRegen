@@ -235,22 +235,39 @@ class RegenManager(private val plugin: OraWorldRegen) {
                     applyWorldBorder(config)
                 }
 
-                // Step7.5: ゲート生成（Multiverse-Portalsゲート）
-                plugin.gateManager.buildGatesForWorld(worldName)
+                Bukkit.getScheduler().runTaskLater(plugin, Runnable {
 
-                // Step8: 完了後コマンド実行
-                if (config.postRegenCommands.isNotEmpty()) {
-                    task.status = RegenStatus.POST_COMMANDS
-                    executePostCommands(config)
-                }
+                    val world = Bukkit.getWorld(config.multiverseWorldName)
+                    if (world == null) {
+                        failRegen(
+                            worldName,
+                            task,
+                            triggeredBy,
+                            startTime,
+                            backupPath,
+                            "ワールド取得失敗"
+                        )
+                        return@Runnable
+                    }
 
-                // Step9: プレイヤーを元の場所へ戻す
-                if (config.returnPlayersAfterRegen && task.playerReturnLocations.isNotEmpty()) {
-                    task.status = RegenStatus.RETURNING
-                    returnPlayers(config, task)
-                } else {
-                    finishRegen(worldName, task, triggeredBy, startTime, backupPath)
-                }
+                    // Step7.5: ゲート生成
+                    plugin.gateManager.buildGatesForWorld(worldName)
+
+                    // Step8: 完了後コマンド実行
+                    if (config.postRegenCommands.isNotEmpty()) {
+                        task.status = RegenStatus.POST_COMMANDS
+                        executePostCommands(config)
+                    }
+
+                    // Step9: プレイヤーを戻す
+                    if (config.returnPlayersAfterRegen && task.playerReturnLocations.isNotEmpty()) {
+                        task.status = RegenStatus.RETURNING
+                        returnPlayers(config, task)
+                    } else {
+                        finishRegen(worldName, task, triggeredBy, startTime, backupPath)
+                    }
+
+                }, 60L)
             })
         })
     }
