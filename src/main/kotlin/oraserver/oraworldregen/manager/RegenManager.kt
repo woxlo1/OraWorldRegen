@@ -26,7 +26,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
     /** worldName -> カウントダウン BukkitTask */
     private val countdownTasks = HashMap<String, BukkitTask>()
     /** 直列実行キュー（worldName） */
-    private val regenQueue     = ArrayDeque<Pair<String, String>>() // worldName, triggeredBy
+    private val regenQueue     = ArrayDeque<Pair<String, String>>()
     /** 現在キュー処理中かどうか */
     private var isProcessingQueue = false
 
@@ -42,10 +42,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
     // 開始 / キュー登録
     // =========================================================================
 
-    /**
-     * ワールドの再生成を要求する。
-     * 現在他のワールドが再生成中の場合はキューに追加し、直列で実行される。
-     */
     fun startRegen(worldName: String, triggeredBy: String = "schedule") {
         val config = plugin.configManager.worldConfigs[worldName] ?: run {
             plugin.logger.warning("startRegen: 設定なし: $worldName")
@@ -55,7 +51,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
             plugin.logger.info("startRegen: 無効化されています: $worldName")
             return
         }
-        // 同一ワールドが既にアクティブまたはキュー内にあれば無視
         if (activeTasks.containsKey(worldName)) {
             plugin.logger.warning("$worldName は既に再生成中です")
             return
@@ -66,11 +61,9 @@ class RegenManager(private val plugin: OraWorldRegen) {
         }
 
         if (isProcessingQueue || activeTasks.isNotEmpty()) {
-            // 他のワールドを処理中 → キューへ
             regenQueue.addLast(worldName to triggeredBy)
             broadcast("§e${worldName} §fをキューに追加しました。§7(キュー: ${regenQueue.size}件)")
 
-            // キューに入ったワールドを QUEUED 状態として activeTasks に登録
             val qTask = RegenTask(worldName).also { it.status = RegenStatus.QUEUED }
             activeTasks[worldName] = qTask
             return
@@ -84,14 +77,9 @@ class RegenManager(private val plugin: OraWorldRegen) {
     // キャンセル
     // =========================================================================
 
-    /**
-     * カウントダウン中のワールドをキャンセルする。
-     * キュー内のワールドもキャンセル可能。
-     */
     fun cancelRegen(worldName: String): Boolean {
         val task = activeTasks[worldName] ?: return false
 
-        // キュー待機中なら即時削除
         if (task.status == RegenStatus.QUEUED) {
             regenQueue.removeAll { it.first == worldName }
             activeTasks.remove(worldName)
@@ -99,14 +87,12 @@ class RegenManager(private val plugin: OraWorldRegen) {
             return true
         }
 
-        // カウントダウン中のみキャンセル可
         if (task.status != RegenStatus.COUNTDOWN) return false
 
         countdownTasks.remove(worldName)?.cancel()
         activeTasks.remove(worldName)
         broadcast("§e${worldName} §fの再生成をキャンセルしました。")
 
-        // キュー先頭を次のワールドへ
         isProcessingQueue = false
         processNextQueue()
         return true
@@ -165,7 +151,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
     }
 
     // =========================================================================
-    // 再生成本体（フル非同期パイプライン）
+    // 再生成本体
     // =========================================================================
 
     private fun executeRegen(
@@ -178,18 +164,14 @@ class RegenManager(private val plugin: OraWorldRegen) {
             p.sendTitle("§6§l再生成開始！", "§e${worldName} を再生成しています...", 10, 40, 10)
         }
 
-        // Step1: ホワイトリスト有効化
         plugin.whitelistManager.enableBlock()
 
-        // Step2: プレイヤー元位置を記憶してから退避
         task.status = RegenStatus.TELEPORTING
         broadcast("§fプレイヤーを §e${config.fallbackWorld} §fへ転送しています...")
         teleportAll(worldName, config, task)
 
-        // Step3: バックアップ → アンロード → 削除 → 作成（全部非同期でチェーン）
         Bukkit.getScheduler().runTaskLater(plugin, Runnable {
 
-            // バックアップ（非同期）
             if (config.backupEnabled) {
                 task.status = RegenStatus.BACKING_UP
                 broadcast("§eバックアップを作成しています...")
@@ -201,7 +183,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
                     } else {
                         broadcast("§cバックアップに失敗しましたが、再生成を続行します。")
                     }
-                    // バックアップ終了後にメインスレッドへ
                     Bukkit.getScheduler().runTask(plugin, Runnable {
                         continueAfterBackup(worldName, config, task, triggeredBy, startTime, backupPath)
                     })
@@ -254,6 +235,9 @@ class RegenManager(private val plugin: OraWorldRegen) {
                     applyWorldBorder(config)
                 }
 
+                // Step7.5: ゲート生成（Multiverse-Portalsゲート）
+                plugin.gateManager.buildGatesForWorld(worldName)
+
                 // Step8: 完了後コマンド実行
                 if (config.postRegenCommands.isNotEmpty()) {
                     task.status = RegenStatus.POST_COMMANDS
@@ -301,7 +285,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
     private fun executePostCommands(config: WorldRegenConfig) {
         val server = plugin.server
         config.postRegenCommands.forEach { cmd ->
-            // プレースホルダー置換
             val resolved = cmd
                 .replace("{world}", config.multiverseWorldName)
                 .replace("{mv_world}", config.multiverseWorldName)
@@ -320,7 +303,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
 
     private fun returnPlayers(config: WorldRegenConfig, task: RegenTask) {
         val worldName = config.worldName
-        val delay = config.returnDelay * 20L // ticks
+        val delay = config.returnDelay * 20L
 
         broadcast("§f${delay / 20}秒後にプレイヤーを元の場所へ戻します...")
 
@@ -335,10 +318,8 @@ class RegenManager(private val plugin: OraWorldRegen) {
             var returnCount = 0
             task.playerReturnLocations.forEach { (uuid, oldLoc) ->
                 val player = Bukkit.getPlayer(uuid) ?: return@forEach
-                // 元の位置のワールドが再生成されたワールドなら戻す
                 val oldWorldName = oldLoc.world?.name
                 val targetLoc = if (oldWorldName == config.multiverseWorldName) {
-                    // 再生成されたワールドのスポーンに戻す（旧座標は無効なため）
                     regenWorld.spawnLocation
                 } else {
                     oldLoc
@@ -371,7 +352,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
         plugin.whitelistManager.disableBlock()
         activeTasks.remove(worldName)
 
-        // 履歴記録
         plugin.historyManager.add(
             RegenHistory(
                 worldName       = worldName,
@@ -390,7 +370,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
         }
         plugin.logger.info("[$worldName] 再生成完了（${elapsed}秒）")
 
-        // キュー処理
         isProcessingQueue = false
         processNextQueue()
     }
@@ -408,7 +387,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
         plugin.whitelistManager.disableBlock()
         activeTasks.remove(worldName)
 
-        // 履歴記録
         plugin.historyManager.add(
             RegenHistory(
                 worldName       = worldName,
@@ -437,7 +415,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
         if (isProcessingQueue || regenQueue.isEmpty()) return
 
         val (nextWorld, nextTrigger) = regenQueue.removeFirst()
-        // QUEUED 状態で登録済みのタスクを削除（新しく作り直す）
         activeTasks.remove(nextWorld)
 
         isProcessingQueue = true
@@ -458,7 +435,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
         Bukkit.getOnlinePlayers()
             .filter { target == null || it.world == target }
             .forEach { p ->
-                // 元位置を記憶（再生成後に戻すため）
                 if (config.returnPlayersAfterRegen) {
                     task.playerReturnLocations[p.uniqueId] = p.location.clone()
                 }

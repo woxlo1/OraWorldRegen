@@ -3,6 +3,7 @@ package oraserver.oraworldregen
 import oraserver.oraworldregen.command.OraWorldRegenCommand
 import oraserver.oraworldregen.config.ConfigManager
 import oraserver.oraworldregen.manager.BackupManager
+import oraserver.oraworldregen.manager.GateManager
 import oraserver.oraworldregen.manager.HistoryManager
 import oraserver.oraworldregen.manager.MultiverseHook
 import oraserver.oraworldregen.manager.RegenManager
@@ -37,6 +38,8 @@ class OraWorldRegen : OraPlugin() {
         private set
     lateinit var backupManager: BackupManager
         private set
+    lateinit var gateManager: GateManager
+        private set
 
     override fun requiredPlugins() = listOf("Multiverse-Core")
 
@@ -52,6 +55,7 @@ class OraWorldRegen : OraPlugin() {
         scheduleManager  = ScheduleManager(this)
         historyManager   = HistoryManager(this)
         backupManager    = BackupManager(this)
+        gateManager      = GateManager(this)
 
         configManager.load()
         historyManager.load()
