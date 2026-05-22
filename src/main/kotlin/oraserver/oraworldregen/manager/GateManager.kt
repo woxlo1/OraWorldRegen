@@ -232,8 +232,8 @@ class GateManager(private val plugin: OraWorldRegen) {
             val mvPortals = plugin.server.pluginManager.getPlugin("Multiverse-Portals")
             if (mvPortals != null && mvPortals.isEnabled) {
                 try {
-                    plugin.server.dispatchCommand(plugin.server.consoleSender, "mvp reload")
-                    plugin.logger.info("[Gate] Multiverse-Portals をリロードしました (/mvp reload)")
+                    plugin.server.dispatchCommand(plugin.server.consoleSender, "mv reload")
+                    plugin.logger.info("[Gate] Multiverse-Portals をリロードしました (/mv reload)")
                 } catch (e: Exception) {
                     plugin.logger.warning("[Gate] /mvp reload 失敗: ${e.message}")
                 }
@@ -243,7 +243,7 @@ class GateManager(private val plugin: OraWorldRegen) {
                     "手動で /mvp reload を実行するか、サーバーを再起動してください。"
                 )
             }
-        }, 40L) // 2秒後（ワールド生成完了を確実に待つ）
+        }, 200L) // 10秒後（ワールド生成完了を確実に待つ）
     }
 
     // =========================================================================
