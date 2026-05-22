@@ -171,9 +171,9 @@ class OraWorldRegenCommand(private val plugin: OraWorldRegen) {
                                 task.failReason?.let {
                                     sender.sendMessage("   §8└ §c失敗: $it")
                                 }
-                            } else if (config.cronSchedules.isNotEmpty()) {
+                            } else if (config.scheduleDescriptions.isNotEmpty()) {
                                 sender.sendMessage(
-                                    "   §8└ §7スケジュール: §f${config.cronSchedules.joinToString(", ")}"
+                                    "   §8└ §7スケジュール: §f${config.scheduleDescriptions.joinToString(", ")}"
                                 )
                             }
                         }
@@ -193,12 +193,10 @@ class OraWorldRegenCommand(private val plugin: OraWorldRegen) {
             literal("history") {
                 setPermission("oraworldregen.admin")
 
-                // /owr history
                 setExecutor { data ->
                     sendHistory(data.sender, null, 1)
                 }
 
-                // /owr history <world>
                 argument("world", StringArg.word()) {
                     suggest({ _, _, _ ->
                         plugin.configManager.worldConfigs.keys.map { ToolTip(it) }
@@ -209,7 +207,6 @@ class OraWorldRegenCommand(private val plugin: OraWorldRegen) {
                         sendHistory(data.sender, worldName, 1)
                     }
 
-                    // /owr history <world> <page>
                     argument("page", IntArg(1, 100)) {
                         setExecutor { data ->
                             val worldName = data.getArgument("world", String::class.java)
@@ -235,11 +232,11 @@ class OraWorldRegenCommand(private val plugin: OraWorldRegen) {
                         sender.sendMessage(" §7登録されているワールドはありません。")
                     } else {
                         configs.forEach { (worldName, config) ->
-                            val cronStr = config.cronSchedules.joinToString(", ").ifEmpty { "(スケジュールなし)" }
+                            val schedStr = config.scheduleDescriptions.joinToString(", ").ifEmpty { "(スケジュールなし)" }
                             if (config.enabled) {
-                                sender.sendMessage(" §a✔ §e${worldName} §8│ §7${cronStr}")
+                                sender.sendMessage(" §a✔ §e${worldName} §8│ §7${schedStr}")
                             } else {
-                                sender.sendMessage(" §c✘ §7${worldName} §8│ §7${cronStr} §c(無効)")
+                                sender.sendMessage(" §c✘ §7${worldName} §8│ §7${schedStr} §c(無効)")
                             }
                             sender.sendMessage(
                                 "   §8└ §7環境:§f${config.environment.name}" +

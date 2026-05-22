@@ -1,9 +1,12 @@
 package oraserver.oraworldregen.config
 
 import oraserver.oraworldregen.OraWorldRegen
+import oraserver.oraworldregen.manager.CronParser
 import oraserver.oraworldregen.model.GateConfig
+import oraserver.oraworldregen.model.ScheduleEntry
 import oraserver.oraworldregen.model.WorldRegenConfig
 import org.bukkit.World
+import java.time.DayOfWeek
 
 class ConfigManager(private val plugin: OraWorldRegen) {
 
@@ -26,8 +29,10 @@ class ConfigManager(private val plugin: OraWorldRegen) {
         worldsSec?.getKeys(false)?.forEach { key ->
             val ws = worldsSec.getConfigurationSection(key) ?: return@forEach
 
-            val crons = ws.getMapList("schedules")
-                .mapNotNull { it["cron"]?.toString() }
+            // schedules: cron 形式・human-readable 形式の両方を受け付ける
+            val scheduleEntries = ws.getMapList("schedules").mapNotNull { map ->
+                parseScheduleEntry(map, key)
+            }
 
             val postCmds = ws.getStringList("post-regen-commands")
 
@@ -57,7 +62,7 @@ class ConfigManager(private val plugin: OraWorldRegen) {
                 worldType           = ws.getString("world-type", "NORMAL")!!,
                 seed                = ws.getString("seed", "")!!,
                 generator           = ws.getString("generator", "")!!,
-                cronSchedules       = crons,
+                scheduleEntries     = scheduleEntries,
                 countdownSeconds    = ws.getInt("countdown-seconds", 300),
                 fallbackWorld       = ws.getString("fallback-world", "world")!!,
                 enabled             = ws.getBoolean("enabled", true),
@@ -133,6 +138,93 @@ class ConfigManager(private val plugin: OraWorldRegen) {
 
         val totalGates = gateConfigs.values.sumOf { it.size }
         plugin.logger.info("${worldConfigs.size} ワールド設定、${totalGates} ゲート設定を読み込みました。")
+    }
+
+    // =========================================================================
+    // スケジュールエントリのパース
+    // =========================================================================
+
+    /**
+     * schedules リストの1エントリをパースして [ScheduleEntry] を返す。
+     *
+     * ## 形式の判定
+     * - `cron` キーがあれば → [ScheduleEntry.Cron]
+     * - `time` キーがあれば → [ScheduleEntry.Human]
+     * - どちらもなければ警告を出して null を返す
+     */
+    private fun parseScheduleEntry(map: Map<*, *>, worldKey: String): ScheduleEntry? {
+        // ── cron 形式 ──
+        val cronStr = map["cron"]?.toString()
+        if (cronStr != null) {
+            return try {
+                ScheduleEntry.Cron(CronParser(cronStr))
+            } catch (e: Exception) {
+                plugin.logger.warning("[Schedule] 不正な cron をスキップ [$worldKey]: $cronStr / ${e.message}")
+                null
+            }
+        }
+
+        // ── human-readable 形式 ──
+        val timeStr = map["time"]?.toString()
+        if (timeStr != null) {
+            return try {
+                parseHumanEntry(timeStr, map, worldKey)
+            } catch (e: Exception) {
+                plugin.logger.warning("[Schedule] スケジュール設定をスキップ [$worldKey]: ${e.message}")
+                null
+            }
+        }
+
+        plugin.logger.warning("[Schedule] 不明なスケジュール形式をスキップ [$worldKey]: $map")
+        return null
+    }
+
+    /**
+     * human-readable 形式の1エントリをパースする。
+     *
+     * @param timeStr  "HH:mm" 形式の文字列（必須）
+     * @param map      エントリ全体の Map
+     */
+    private fun parseHumanEntry(
+        timeStr: String,
+        map: Map<*, *>,
+        worldKey: String
+    ): ScheduleEntry.Human {
+        // time: "HH:mm"
+        val parts = timeStr.split(":")
+        require(parts.size == 2) { "time は HH:mm 形式で指定してください: \"$timeStr\"" }
+        val hour   = parts[0].trim().toInt()
+        val minute = parts[1].trim().toInt()
+
+        // dayofweek: "MONDAY" 等（省略可）
+        val dayOfWeek: DayOfWeek? = map["dayofweek"]?.toString()?.uppercase()?.let { dow ->
+            try {
+                DayOfWeek.valueOf(dow)
+            } catch (e: IllegalArgumentException) {
+                plugin.logger.warning(
+                    "[Schedule] 不明な dayofweek をスキップ [$worldKey]: \"$dow\" " +
+                            "(有効値: MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY)"
+                )
+                null
+            }
+        }
+
+        // day: 1〜31（省略可）
+        val dayOfMonth: Int? = (map["day"] as? Number)?.toInt()
+
+        if (plugin.configManager.debug) {
+            plugin.logger.info(
+                "[Schedule] human-readable 登録 [$worldKey]: " +
+                        "%02d:%02d dow=$dayOfWeek dom=$dayOfMonth".format(hour, minute)
+            )
+        }
+
+        return ScheduleEntry.Human(
+            hour       = hour,
+            minute     = minute,
+            dayOfWeek  = dayOfWeek,
+            dayOfMonth = dayOfMonth
+        )
     }
 
     private fun parseEnv(s: String?) = when (s?.uppercase()) {

@@ -62,8 +62,9 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
                 if (config.backupEnabled)  add("§7バックアップ: §a有効")
                 if (config.borderEnabled)  add("§7ボーダー: §a${config.borderSize.toInt()}×${config.borderSize.toInt()}")
                 if (config.returnPlayersAfterRegen) add("§7帰還: §a有効 (${config.returnDelay}秒後)")
-                if (config.cronSchedules.isNotEmpty()) {
-                    add("§7スケジュール: §f${config.cronSchedules.joinToString(", ")}")
+                // scheduleDescriptions を使用（cron/human-readable 両対応）
+                if (config.scheduleDescriptions.isNotEmpty()) {
+                    add("§7スケジュール: §f${config.scheduleDescriptions.joinToString(", ")}")
                 }
                 activeTask?.let {
                     add("§7経過時間: §f${it.elapsedSeconds}秒")
@@ -138,7 +139,6 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
             .setDisplayName("§r").setCanClick(false)
         (45..53).forEach { setItem(it, barBg) }
 
-        // キュー情報
         val queue = oraplugin.regenManager.getQueue()
         if (queue.isNotEmpty()) {
             setItem(46, OraInventoryItem(Material.HOPPER)
@@ -147,7 +147,6 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
                 .setCanClick(false))
         }
 
-        // 再読み込みボタン
         setItem(48, OraInventoryItem(Material.COMPARATOR)
             .setDisplayName("§e§l設定リロード")
             .addLore("§7config.yml を再読み込みします")
@@ -158,7 +157,6 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
                 open(player)
             })
 
-        // 情報ボタン
         setItem(49, OraInventoryItem(Material.BOOK)
             .setDisplayName("§b§lOraWorldRegen §7v${oraplugin.pluginMeta.version}")
             .addLore(
@@ -169,7 +167,6 @@ class MainMenuGui(private val oraplugin: OraWorldRegen) :
             )
             .setCanClick(false))
 
-        // 閉じるボタン
         setCloseButton(player, 50)
     }
 

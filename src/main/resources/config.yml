@@ -16,8 +16,36 @@ worlds:
     fallback-world: "world"      # 退避先ワールド
 
     # ── スケジュール ───────────────────────────────────────
+    # 2種類の形式を混在させることができます。
+    #
+    # 【human-readable 形式】（推奨）
+    #   time:      発動時刻 (HH:mm)                  ※必須
+    #   dayofweek: 曜日 (MONDAY〜SUNDAY)             ※省略=毎日
+    #   day:       月内日付 (1〜31)                  ※省略=毎日
+    #   ※ dayofweek と day を両方指定した場合は AND 条件になります
+    #
+    # 【cron 形式】（後方互換）
+    #   cron: "分 時 日 月 曜日(0=日曜)"
+    #
     schedules:
-      - cron: "0 4 * * 0"       # 毎週日曜 AM4:00
+      # 例1: 毎週日曜 04:00（human-readable）
+      - time: "04:00"
+        dayofweek: "SUNDAY"
+
+      # 例2: 毎月1日 12:00（human-readable）
+      # - time: "12:00"
+      #   day: 1
+
+      # 例3: 毎日 03:00（human-readable, dayofweek/day を省略）
+      # - time: "03:00"
+
+      # 例4: 毎月15日かつ水曜 18:30（AND条件）
+      # - time: "18:30"
+      #   dayofweek: "WEDNESDAY"
+      #   day: 15
+
+      # 例5: cron 形式（後方互換）
+      # - cron: "0 4 * * 0"
 
     # ── バックアップ ───────────────────────────────────────
     backup:

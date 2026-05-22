@@ -1,32 +1,27 @@
 package oraserver.oraworldregen.scheduler
 
 import oraserver.oraworldregen.OraWorldRegen
-import oraserver.oraworldregen.manager.CronParser
+import oraserver.oraworldregen.model.ScheduleEntry
 import org.bukkit.scheduler.BukkitTask
 import java.time.ZoneId
 
 class ScheduleManager(private val plugin: OraWorldRegen) {
 
-    private val parsedCrons = HashMap<String, List<CronParser>>()
+    /** worldName → スケジュールエントリ一覧 */
+    private val schedules = HashMap<String, List<ScheduleEntry>>()
     private var pollingTask: BukkitTask? = null
 
     fun loadAll() {
-        parsedCrons.clear()
+        schedules.clear()
 
         plugin.configManager.worldConfigs.forEach { (worldName, config) ->
             if (!config.enabled) return@forEach
+            if (config.scheduleEntries.isEmpty()) return@forEach
 
-            val parsers = config.cronSchedules.mapNotNull { cron ->
-                try {
-                    CronParser(cron).also {
-                        plugin.logger.info("スケジュール登録: $worldName >> $cron")
-                    }
-                } catch (e: Exception) {
-                    plugin.logger.warning("不正な cron をスキップ [$worldName]: $cron / ${e.message}")
-                    null
-                }
+            schedules[worldName] = config.scheduleEntries
+            config.scheduleEntries.forEach { entry ->
+                plugin.logger.info("スケジュール登録: $worldName >> $entry")
             }
-            if (parsers.isNotEmpty()) parsedCrons[worldName] = parsers
         }
 
         startPolling()
@@ -35,20 +30,21 @@ class ScheduleManager(private val plugin: OraWorldRegen) {
     fun cancelAll() {
         pollingTask?.cancel()
         pollingTask = null
-        parsedCrons.clear()
+        schedules.clear()
     }
 
     private fun startPolling() {
-        if (parsedCrons.isEmpty()) {
+        if (schedules.isEmpty()) {
             plugin.logger.info("有効なスケジュールなし。ポーリングを起動しません。")
             return
         }
 
+        // 毎分 (1200 ticks) チェック
         pollingTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable {
             checkSchedules()
         }, 0L, 1200L)
 
-        plugin.logger.info("スケジュールポーリング開始 (${parsedCrons.size} ワールド)")
+        plugin.logger.info("スケジュールポーリング開始 (${schedules.size} ワールド)")
     }
 
     private fun checkSchedules() {
@@ -58,12 +54,12 @@ class ScheduleManager(private val plugin: OraWorldRegen) {
             ZoneId.of("Asia/Tokyo")
         }
 
-        parsedCrons.forEach { (worldName, crons) ->
+        schedules.forEach { (worldName, entries) ->
             if (plugin.regenManager.isRegenerating(worldName)) return@forEach
 
-            crons.forEach { cron ->
-                if (cron.matchesNow(zone)) {
-                    plugin.logger.info("スケジュール発火: $worldName ($cron)")
+            entries.forEach { entry ->
+                if (entry.matchesNow(zone)) {
+                    plugin.logger.info("スケジュール発火: $worldName ($entry)")
                     plugin.regenManager.startRegen(worldName)
                     return@forEach // 同一ワールドは1分に1度
                 }

@@ -9,7 +9,10 @@ data class WorldRegenConfig(
     val worldType: String,
     val seed: String,
     val generator: String,
-    val cronSchedules: List<String>,
+
+    /** スケジュール一覧（cron形式・human-readable形式の混在可） */
+    val scheduleEntries: List<ScheduleEntry> = emptyList(),
+
     val countdownSeconds: Int,
     val fallbackWorld: String,
     var enabled: Boolean,
@@ -17,14 +20,14 @@ data class WorldRegenConfig(
     // バックアップ設定
     val backupEnabled: Boolean = false,
     val backupDirectory: String = "backups",
-    val backupMaxCount: Int = 5,          // 保持するバックアップ最大数
+    val backupMaxCount: Int = 5,
 
     // 完了後コマンド
     val postRegenCommands: List<String> = emptyList(),
 
     // ワールドボーダー設定
     val borderEnabled: Boolean = false,
-    val borderSize: Double = 2000.0,       // 直径（例: 1000x1000 -> 1000.0）
+    val borderSize: Double = 2000.0,
     val borderCenterX: Double = 0.0,
     val borderCenterZ: Double = 0.0,
     val borderDamageAmount: Double = 0.2,
@@ -34,5 +37,11 @@ data class WorldRegenConfig(
 
     // プレイヤー戻し設定
     val returnPlayersAfterRegen: Boolean = true,
-    val returnDelay: Long = 60L            // 再生成完了後に戻すまでの秒数
-)
+    val returnDelay: Long = 60L
+) {
+    /**
+     * スケジュールの文字列表現一覧（GUI・コマンド表示用）
+     */
+    val scheduleDescriptions: List<String>
+        get() = scheduleEntries.map { it.toString() }
+}

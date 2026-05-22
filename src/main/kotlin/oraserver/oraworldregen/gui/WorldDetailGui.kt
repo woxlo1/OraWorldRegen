@@ -25,7 +25,7 @@ class WorldDetailGui(
 
         val activeTask = oraplugin.regenManager.tasks[worldName]
 
-        // ── ステータス表示（上中央）────────────────────────────────────
+        // ── ステータス表示 ────────────────────────────────────────────
         val statusMat = when (activeTask?.status) {
             null                      -> if (config.enabled) Material.LIME_DYE else Material.GRAY_DYE
             RegenStatus.COUNTDOWN     -> Material.YELLOW_DYE
@@ -61,10 +61,11 @@ class WorldDetailGui(
         setItem(12, OraInventoryItem(Material.CLOCK)
             .setDisplayName("§e§lスケジュール")
             .addLore(buildList {
-                if (config.cronSchedules.isEmpty()) {
+                if (config.scheduleDescriptions.isEmpty()) {
                     add("§7スケジュールなし")
                 } else {
-                    config.cronSchedules.forEach { add("§f$it") }
+                    // human-readable / cron どちらも toString() で表示
+                    config.scheduleDescriptions.forEach { add("§f$it") }
                 }
             })
             .setCanClick(false))
@@ -77,7 +78,6 @@ class WorldDetailGui(
                 if (config.backupEnabled) {
                     add("§7保存先: §f${config.backupDirectory}")
                     add("§7最大保持数: §f${config.backupMaxCount}件")
-                    // 最新バックアップ履歴
                     val lastBackup = oraplugin.historyManager
                         .getByWorld(worldName)
                         .firstOrNull { it.backupFile != null }
