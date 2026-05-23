@@ -3,6 +3,7 @@ package oraserver.oraworldregen.config
 import oraserver.oraworldregen.OraWorldRegen
 import oraserver.oraworldregen.manager.CronParser
 import oraserver.oraworldregen.model.GateConfig
+import oraserver.oraworldregen.model.GateFacing
 import oraserver.oraworldregen.model.ScheduleEntry
 import oraserver.oraworldregen.model.WorldRegenConfig
 import org.bukkit.World
@@ -29,7 +30,6 @@ class ConfigManager(private val plugin: OraWorldRegen) {
         worldsSec?.getKeys(false)?.forEach { key ->
             val ws = worldsSec.getConfigurationSection(key) ?: return@forEach
 
-            // schedules: cron 形式・human-readable 形式の両方を受け付ける
             val scheduleEntries = ws.getMapList("schedules").mapNotNull { map ->
                 parseScheduleEntry(map, key)
             }
@@ -88,33 +88,39 @@ class ConfigManager(private val plugin: OraWorldRegen) {
         gatesSec?.getKeys(false)?.forEach { gateName ->
             val gs = gatesSec.getConfigurationSection(gateName) ?: return@forEach
 
-            val worldName   = gs.getString("world", "").orEmpty()
+            val worldName = gs.getString("world", "").orEmpty()
             if (worldName.isEmpty()) {
                 plugin.logger.warning("[Gate] ゲート '$gateName': world が未設定です。スキップします。")
                 return@forEach
             }
 
-            val frameBlock  = gs.getString("frame-block",  "OBSIDIAN").orEmpty().ifBlank { "OBSIDIAN" }
-            val portalBlock = gs.getString("portal-block", "WATER").orEmpty().ifBlank { "WATER" }
-            val destination = gs.getString("destination",  "w:world").orEmpty().ifBlank { "w:world" }
-            val enabled     = gs.getBoolean("enabled", true)
-            val owner       = gs.getString("owner", "OraWorldRegen").orEmpty().ifBlank { "OraWorldRegen" }
+            val facing     = GateFacing.parse(gs.getString("facing", "south"))
+            val frameBlock = gs.getString("frame-block",  "OBSIDIAN").orEmpty().ifBlank { "OBSIDIAN" }
+            val portalBlock= gs.getString("portal-block", "WATER").orEmpty().ifBlank { "WATER" }
+            val destination= gs.getString("destination",  "w:world").orEmpty().ifBlank { "w:world" }
+            val enabled    = gs.getBoolean("enabled", true)
+            val owner      = gs.getString("owner", "OraWorldRegen").orEmpty().ifBlank { "OraWorldRegen" }
 
-            val locSec = gs.getConfigurationSection("location")
-            if (locSec == null) {
-                plugin.logger.warning("[Gate] ゲート '$gateName': location セクションがありません。スキップします。")
-                return@forEach
-            }
+            // size セクション
+            val sizeSec = gs.getConfigurationSection("size")
+            val width   = sizeSec?.getInt("width",  2) ?: 2
+            val height  = sizeSec?.getInt("height", 3) ?: 3
+
+            // offset セクション（省略可、デフォルト 0）
+            val offsetSec = gs.getConfigurationSection("offset")
+            val offsetX   = offsetSec?.getInt("x", 0) ?: 0
+            val offsetY   = offsetSec?.getInt("y", 0) ?: 0
+            val offsetZ   = offsetSec?.getInt("z", 0) ?: 0
 
             val gate = GateConfig(
                 name        = gateName,
                 worldName   = worldName,
-                x1          = locSec.getInt("x1"),
-                y1          = locSec.getInt("y1"),
-                z1          = locSec.getInt("z1"),
-                x2          = locSec.getInt("x2"),
-                y2          = locSec.getInt("y2"),
-                z2          = locSec.getInt("z2"),
+                facing      = facing,
+                width       = width,
+                height      = height,
+                offsetX     = offsetX,
+                offsetY     = offsetY,
+                offsetZ     = offsetZ,
                 frameBlock  = frameBlock,
                 portalBlock = portalBlock,
                 destination = destination,
@@ -144,16 +150,7 @@ class ConfigManager(private val plugin: OraWorldRegen) {
     // スケジュールエントリのパース
     // =========================================================================
 
-    /**
-     * schedules リストの1エントリをパースして [ScheduleEntry] を返す。
-     *
-     * ## 形式の判定
-     * - `cron` キーがあれば → [ScheduleEntry.Cron]
-     * - `time` キーがあれば → [ScheduleEntry.Human]
-     * - どちらもなければ警告を出して null を返す
-     */
     private fun parseScheduleEntry(map: Map<*, *>, worldKey: String): ScheduleEntry? {
-        // ── cron 形式 ──
         val cronStr = map["cron"]?.toString()
         if (cronStr != null) {
             return try {
@@ -164,7 +161,6 @@ class ConfigManager(private val plugin: OraWorldRegen) {
             }
         }
 
-        // ── human-readable 形式 ──
         val timeStr = map["time"]?.toString()
         if (timeStr != null) {
             return try {
@@ -179,45 +175,29 @@ class ConfigManager(private val plugin: OraWorldRegen) {
         return null
     }
 
-    /**
-     * human-readable 形式の1エントリをパースする。
-     *
-     * @param timeStr  "HH:mm" 形式の文字列（必須）
-     * @param map      エントリ全体の Map
-     */
     private fun parseHumanEntry(
         timeStr: String,
         map: Map<*, *>,
         worldKey: String
     ): ScheduleEntry.Human {
-        // time: "HH:mm"
         val parts = timeStr.split(":")
         require(parts.size == 2) { "time は HH:mm 形式で指定してください: \"$timeStr\"" }
         val hour   = parts[0].trim().toInt()
         val minute = parts[1].trim().toInt()
 
-        // dayofweek: "MONDAY" 等（省略可）
         val dayOfWeek: DayOfWeek? = map["dayofweek"]?.toString()?.uppercase()?.let { dow ->
             try {
                 DayOfWeek.valueOf(dow)
             } catch (e: IllegalArgumentException) {
                 plugin.logger.warning(
                     "[Schedule] 不明な dayofweek をスキップ [$worldKey]: \"$dow\" " +
-                            "(有効値: MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY)"
+                    "(有効値: MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY)"
                 )
                 null
             }
         }
 
-        // day: 1〜31（省略可）
         val dayOfMonth: Int? = (map["day"] as? Number)?.toInt()
-
-        if (plugin.configManager.debug) {
-            plugin.logger.info(
-                "[Schedule] human-readable 登録 [$worldKey]: " +
-                        "%02d:%02d dow=$dayOfWeek dom=$dayOfMonth".format(hour, minute)
-            )
-        }
 
         return ScheduleEntry.Human(
             hour       = hour,

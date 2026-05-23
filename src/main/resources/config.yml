@@ -4,7 +4,6 @@
 # ════════════════════════════════════════════════════════════
 worlds:
   resources:
-    # Multiverse-Core に登録されているワールド名
     multiverse-world-name: "resources"
     environment: NORMAL          # NORMAL / NETHER / THE_END
     world-type: NORMAL           # NORMAL / FLAT / AMPLIFIED / LARGE_BIOMES
@@ -16,152 +15,73 @@ worlds:
     fallback-world: "world"      # 退避先ワールド
 
     # ── スケジュール ───────────────────────────────────────
-    # 2種類の形式を混在させることができます。
-    #
     # 【human-readable 形式】（推奨）
     #   time:      発動時刻 (HH:mm)                  ※必須
     #   dayofweek: 曜日 (MONDAY〜SUNDAY)             ※省略=毎日
     #   day:       月内日付 (1〜31)                  ※省略=毎日
-    #   ※ dayofweek と day を両方指定した場合は AND 条件になります
     #
     # 【cron 形式】（後方互換）
     #   cron: "分 時 日 月 曜日(0=日曜)"
-    #
     schedules:
-      # 例1: 毎週日曜 04:00（human-readable）
       - time: "04:00"
         dayofweek: "SUNDAY"
-
-      # 例2: 毎月1日 12:00（human-readable）
-      # - time: "12:00"
-      #   day: 1
-
-      # 例3: 毎日 03:00（human-readable, dayofweek/day を省略）
-      # - time: "03:00"
-
-      # 例4: 毎月15日かつ水曜 18:30（AND条件）
-      # - time: "18:30"
-      #   dayofweek: "WEDNESDAY"
-      #   day: 15
-
-      # 例5: cron 形式（後方互換）
-      # - cron: "0 4 * * 0"
+      # - cron: "0 4 * * 0"   # cron形式の例（後方互換）
 
     # ── バックアップ ───────────────────────────────────────
     backup:
-      enabled: false             # true: 削除前に zip バックアップを作成
-      directory: "backups"       # プラグインフォルダからの相対パス (絶対パスも可)
-      max-count: 5               # 保持するバックアップ最大数(超えた古いものを削除)
+      enabled: false
+      directory: "backups"
+      max-count: 5
 
     # ── ワールドボーダー ───────────────────────────────────
     world-border:
-      enabled: false             # true: 再生成後にボーダーを設定
-      size: 2000.0               # ボーダー直径 (例: 1000 → 1000×1000)
+      enabled: false
+      size: 2000.0
       center-x: 0.0
       center-z: 0.0
-      damage-amount: 0.2         # ボーダー外ダメージ量/秒
-      damage-buffer: 5.0         # ダメージ開始バッファ(m)
-      warning-distance: 5        # 警告表示距離(m)
-      warning-time: 15           # 警告表示時間(秒)
+      damage-amount: 0.2
+      damage-buffer: 5.0
+      warning-distance: 5
+      warning-time: 15
 
     # ── 再生成後コマンド ───────────────────────────────────
-    # {world} / {mv_world} でワールド名に置換されます
     post-regen-commands:
       - "mv modify set gamemode survival {world}"
-      # - "mv modify set difficulty normal {world}"
 
     # ── プレイヤー帰還 ─────────────────────────────────────
     return-players:
-      enabled: true              # true: 再生成完了後にプレイヤーを元の場所へ戻す
-      delay-seconds: 60          # 完了後何秒後に戻すか
+      enabled: true
+      delay-seconds: 60
 
 # ════════════════════════════════════════════════════════════
-#  gates : 再生成後に自動生成するMultiverse-Portalsゲート
+#  gates : 再生成後にワールドへ自動生成するゲート
+#
+#  ゲートはワールドのスポーン地点を基準に配置されます。
+#  offset でスポーンからの相対位置を調整できます。
 # ════════════════════════════════════════════════════════════
-#
-# 【仕組み】
-#   - ブロックをワールドに配置し、Multiverse-Portals の portals.yml に
-#     エントリを書き込んで /mvp reload する。
-#   - ゲートはフレーム内部をどんなブロックでも使用できる（Multiverse仕様）。
-#
-# 【location について】
-#   x1,y1,z1 〜 x2,y2,z2 の「内側範囲」の対角2点を指定する。
-#   フレームブロックはこの範囲の外側1マスに自動配置される。
-#   ※ ポータルを平面にする場合はZ（または X）を同じ値にする。
-#     例: z1=10, z2=10 → Z=10 の平面にX方向へ広がるポータルが生成される
-#
-# 【portal-block（充填ブロック）の選択肢】
-#   WATER        - 水（流れない・見やすい・よく使われる）
-#   LAVA         - 溶岩（見た目が派手）
-#   NETHER_PORTAL - ネザーポータルブロック（紫・エフェクト・音あり）
-#   AIR          - 透明（ゲートが見えない）
-#   その他任意のMaterial名（例: COBWEB, HONEY_BLOCK など）
-#
-# 【destination の書式】
-#   w:<ワールド名>                     → そのワールドのスポーンへ
-#   e:<ワールド名>:<X>,<Y>,<Z>         → 座標指定
-#   e:<ワールド名>:<X>,<Y>,<Z>:<pitch>:<yaw>  → 座標+向き
-#   p:<ポータル名>                     → 別ポータルへ
-#
 gates:
-  # ──────────────────────────────────────────────────────────
-  # 例1: resources ワールドの出入口ゲート（水で充填、黒曜石フレーム）
-  # ──────────────────────────────────────────────────────────
   resources-gate:
-    world: "resources"          # どのワールドにゲートを置くか
+    world: "resources"           # ゲートを設置するワールド名
+
+    facing: "south"              # ゲートの向き
+                                 #   south / north : 東西に広がる（南北向きに立つ）
+                                 #   east  / west  : 南北に広がる（東西向きに立つ）
+
+    size:
+      width: 2                   # ゲート内側の幅（ブロック数）
+      height: 3                  # ゲート内側の高さ（ブロック数）
+
+    offset:                      # スポーン地点からのずらし量（省略可、デフォルト 0）
+      x: 3                       # 東方向に3ブロックずらす例
+      y: 0                       # 地面レベルから変えない
+      z: 0
+
+    frame-block: "OBSIDIAN"      # フレームブロック
+    portal-block: "WATER"        # 内側ブロック（WATER / LAVA / NETHER_PORTAL / AIR 等）
+    destination: "w:world"       # テレポート先（Multiverse destination 形式）
     enabled: true
+    owner: "OraWorldRegen"
 
-    # ゲート内側の範囲（対角2点）
-    # この例は Z=10 固定の 2x3 サイズ（幅2・高さ3）の平面ポータル
-    location:
-      x1: 0
-      y1: 64
-      z1: 10
-      x2: 1
-      y2: 66
-      z2: 10   # z1=z2 にすることで Z 平面のポータルになる
-
-    frame-block:  "OBSIDIAN"   # フレームのブロック（任意のMaterial）
-    portal-block: "WATER"      # ゲート内側のブロック（WATER/LAVA/NETHER_PORTAL/AIR等）
-    destination:  "w:world"    # テレポート先（worldのスポーン）
-    owner:        "OraWorldRegen"
-
-  # ──────────────────────────────────────────────────────────
-  # 例2: ネザーポータル風（NETHER_PORTALで充填）
-  # ──────────────────────────────────────────────────────────
-  # resources-nether-gate:
-  #   world: "resources"
-  #   enabled: false
-  #   location:
-  #     x1: 100
-  #     y1: 64
-  #     z1: 200
-  #     x2: 101
-  #     y2: 66
-  #     z2: 200
-  #   frame-block:  "OBSIDIAN"
-  #   portal-block: "NETHER_PORTAL"
-  #   destination:  "e:world:0,64,0:0:0"   # 座標+向き指定
-  #   owner:        "OraWorldRegen"
-
-  # ──────────────────────────────────────────────────────────
-  # 例3: 溶岩ゲート（石レンガフレーム）
-  # ──────────────────────────────────────────────────────────
-  # resources-lava-gate:
-  #   world: "resources"
-  #   enabled: false
-  #   location:
-  #     x1: 50
-  #     y1: 64
-  #     z1: 50
-  #     x2: 50
-  #     y2: 66
-  #     z2: 51
-  #   frame-block:  "STONE_BRICKS"
-  #   portal-block: "LAVA"
-  #   destination:  "w:world"
-  #   owner:        "OraWorldRegen"
-  
 # ════════════════════════════════════════════════════════════
 #  settings : グローバル設定
 # ════════════════════════════════════════════════════════════

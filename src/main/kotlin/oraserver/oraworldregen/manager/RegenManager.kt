@@ -35,7 +35,6 @@ class RegenManager(private val plugin: OraWorldRegen) {
     fun isRegenerating(worldName: String) = activeTasks.containsKey(worldName)
     fun isAnyRegenerating()               = activeTasks.isNotEmpty()
 
-    /** キューに入っているワールド名リストを返す（先頭が次に実行される） */
     fun getQueue(): List<String> = regenQueue.map { it.first }
 
     // =========================================================================
@@ -63,9 +62,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
         if (isProcessingQueue || activeTasks.isNotEmpty()) {
             regenQueue.addLast(worldName to triggeredBy)
             broadcast("§e${worldName} §fをキューに追加しました。§7(キュー: ${regenQueue.size}件)")
-
-            val qTask = RegenTask(worldName).also { it.status = RegenStatus.QUEUED }
-            activeTasks[worldName] = qTask
+            activeTasks[worldName] = RegenTask(worldName).also { it.status = RegenStatus.QUEUED }
             return
         }
 
@@ -158,6 +155,15 @@ class RegenManager(private val plugin: OraWorldRegen) {
         worldName: String, config: WorldRegenConfig,
         task: RegenTask, triggeredBy: String
     ) {
+        // ── 二重実行ガード ──────────────────────────────────────────────────
+        // cancelRegen などで既に activeTasks から消えていたら何もしない
+        if (!activeTasks.containsKey(worldName)) {
+            plugin.logger.warning("[$worldName] executeRegen: タスクが存在しません。スキップします。")
+            isProcessingQueue = false
+            processNextQueue()
+            return
+        }
+
         val startTime = Instant.now()
         broadcast("§e${worldName} §fのワールド再生成を開始します...")
         Bukkit.getOnlinePlayers().forEach { p ->
@@ -170,44 +176,57 @@ class RegenManager(private val plugin: OraWorldRegen) {
         broadcast("§fプレイヤーを §e${config.fallbackWorld} §fへ転送しています...")
         teleportAll(worldName, config, task)
 
+        // プレイヤー転送完了を待って次フェーズへ（2tick後）
         Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+            doBackupPhase(worldName, config, task, triggeredBy, startTime)
+        }, 2L)
+    }
 
-            if (config.backupEnabled) {
-                task.status = RegenStatus.BACKING_UP
-                broadcast("§eバックアップを作成しています...")
+    // ── フェーズ分割: バックアップ ──────────────────────────────────────────
 
-                Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
-                    val backupPath = plugin.backupManager.backup(config)
+    private fun doBackupPhase(
+        worldName: String, config: WorldRegenConfig,
+        task: RegenTask, triggeredBy: String, startTime: Instant
+    ) {
+        if (config.backupEnabled) {
+            task.status = RegenStatus.BACKING_UP
+            broadcast("§eバックアップを作成しています...")
+
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+                val backupPath = plugin.backupManager.backup(config)
+
+                Bukkit.getScheduler().runTask(plugin, Runnable {
                     if (backupPath != null) {
                         broadcast("§aバックアップ完了: §7${File(backupPath).name}")
                     } else {
                         broadcast("§cバックアップに失敗しましたが、再生成を続行します。")
                     }
-                    Bukkit.getScheduler().runTask(plugin, Runnable {
-                        continueAfterBackup(worldName, config, task, triggeredBy, startTime, backupPath)
-                    })
+                    doUnloadAndDeletePhase(worldName, config, task, triggeredBy, startTime, backupPath)
                 })
-            } else {
-                continueAfterBackup(worldName, config, task, triggeredBy, startTime, null)
-            }
-        }, 2L)
+            })
+        } else {
+            // バックアップ不要の場合は直接次フェーズへ
+            doUnloadAndDeletePhase(worldName, config, task, triggeredBy, startTime, null)
+        }
     }
 
-    private fun continueAfterBackup(
+    // ── フェーズ分割: アンロード → 削除 ────────────────────────────────────
+
+    private fun doUnloadAndDeletePhase(
         worldName: String, config: WorldRegenConfig,
         task: RegenTask, triggeredBy: String,
         startTime: Instant, backupPath: String?
     ) {
-        // Step4: アンロード
+        // アンロード（メインスレッド）
         task.status = RegenStatus.UNLOADING
         plugin.logger.info("[$worldName] Multiverse アンロード中...")
         plugin.multiverseHook.unloadWorld(config.multiverseWorldName)
 
-        // Step5: フォルダ削除（非同期）
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
-            task.status = RegenStatus.DELETING
-            broadcast("§cワールドデータを削除中...")
+        // 削除（非同期）
+        task.status = RegenStatus.DELETING
+        broadcast("§cワールドデータを削除中...")
 
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
             val worldFolder = File(Bukkit.getWorldContainer(), config.multiverseWorldName)
             try {
                 deleteDirectory(worldFolder.toPath())
@@ -218,58 +237,51 @@ class RegenManager(private val plugin: OraWorldRegen) {
                 return@Runnable
             }
 
-            // Step6: ワールド作成（メインスレッド）
+            // 削除完了 → メインスレッドで再生成フェーズへ
             Bukkit.getScheduler().runTask(plugin, Runnable {
-                task.status = RegenStatus.CREATING
-                broadcast("§aワールドを再生成中...")
-
-                val ok = plugin.multiverseHook.importWorld(config)
-                if (!ok) {
-                    failRegen(worldName, task, triggeredBy, startTime, backupPath, "Multiverse によるワールド作成失敗")
-                    return@Runnable
-                }
-
-                // Step7: ワールドボーダー設定
-                if (config.borderEnabled) {
-                    task.status = RegenStatus.SETTING_BORDER
-                    applyWorldBorder(config)
-                }
-
-                Bukkit.getScheduler().runTaskLater(plugin, Runnable {
-
-                    val world = Bukkit.getWorld(config.multiverseWorldName)
-                    if (world == null) {
-                        failRegen(
-                            worldName,
-                            task,
-                            triggeredBy,
-                            startTime,
-                            backupPath,
-                            "ワールド取得失敗"
-                        )
-                        return@Runnable
-                    }
-
-                    // Step7.5: ゲート生成
-                    plugin.gateManager.buildGatesForWorld(worldName)
-
-                    // Step8: 完了後コマンド実行
-                    if (config.postRegenCommands.isNotEmpty()) {
-                        task.status = RegenStatus.POST_COMMANDS
-                        executePostCommands(config)
-                    }
-
-                    // Step9: プレイヤーを戻す
-                    if (config.returnPlayersAfterRegen && task.playerReturnLocations.isNotEmpty()) {
-                        task.status = RegenStatus.RETURNING
-                        returnPlayers(config, task)
-                    } else {
-                        finishRegen(worldName, task, triggeredBy, startTime, backupPath)
-                    }
-
-                }, 60L)
+                doCreatePhase(worldName, config, task, triggeredBy, startTime, backupPath)
             })
         })
+    }
+
+    // ── フェーズ分割: ワールド再生成 ────────────────────────────────────────
+
+    private fun doCreatePhase(
+        worldName: String, config: WorldRegenConfig,
+        task: RegenTask, triggeredBy: String,
+        startTime: Instant, backupPath: String?
+    ) {
+        task.status = RegenStatus.CREATING
+        broadcast("§aワールドを再生成中...")
+
+        val ok = plugin.multiverseHook.importWorld(config)
+        if (!ok) {
+            failRegen(worldName, task, triggeredBy, startTime, backupPath, "Multiverse によるワールド作成失敗")
+            return
+        }
+
+        // ワールドボーダー設定
+        if (config.borderEnabled) {
+            task.status = RegenStatus.SETTING_BORDER
+            applyWorldBorder(config)
+        }
+
+        // ゲート生成（スポーン地点基準）
+        plugin.gateManager.buildGatesForWorld(worldName)
+
+        // 完了後コマンド
+        if (config.postRegenCommands.isNotEmpty()) {
+            task.status = RegenStatus.POST_COMMANDS
+            executePostCommands(config)
+        }
+
+        // プレイヤー帰還
+        if (config.returnPlayersAfterRegen && task.playerReturnLocations.isNotEmpty()) {
+            task.status = RegenStatus.RETURNING
+            returnPlayers(config, task)
+        } else {
+            finishRegen(worldName, task, triggeredBy, startTime, backupPath)
+        }
     }
 
     // =========================================================================
@@ -296,7 +308,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
     }
 
     // =========================================================================
-    // 完了後コマンド実行
+    // 完了後コマンド
     // =========================================================================
 
     private fun executePostCommands(config: WorldRegenConfig) {
@@ -315,14 +327,14 @@ class RegenManager(private val plugin: OraWorldRegen) {
     }
 
     // =========================================================================
-    // プレイヤー戻し
+    // プレイヤー帰還
     // =========================================================================
 
     private fun returnPlayers(config: WorldRegenConfig, task: RegenTask) {
-        val worldName = config.worldName
-        val delay = config.returnDelay * 20L
+        val worldName  = config.worldName
+        val delayTicks = config.returnDelay * 20L
 
-        broadcast("§f${delay / 20}秒後にプレイヤーを元の場所へ戻します...")
+        broadcast("§f${config.returnDelay}秒後にプレイヤーを元の場所へ戻します...")
 
         Bukkit.getScheduler().runTaskLater(plugin, Runnable {
             val regenWorld = Bukkit.getWorld(config.multiverseWorldName)
@@ -335,8 +347,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
             var returnCount = 0
             task.playerReturnLocations.forEach { (uuid, oldLoc) ->
                 val player = Bukkit.getPlayer(uuid) ?: return@forEach
-                val oldWorldName = oldLoc.world?.name
-                val targetLoc = if (oldWorldName == config.multiverseWorldName) {
+                val targetLoc = if (oldLoc.world?.name == config.multiverseWorldName) {
                     regenWorld.spawnLocation
                 } else {
                     oldLoc
@@ -347,11 +358,9 @@ class RegenManager(private val plugin: OraWorldRegen) {
             }
             task.playerReturnLocations.clear()
 
-            if (returnCount > 0) {
-                broadcast("§a${returnCount}人のプレイヤーを元の場所へ戻しました。")
-            }
+            if (returnCount > 0) broadcast("§a${returnCount}人のプレイヤーを元の場所へ戻しました。")
             finishRegen(worldName, task, "unknown", task.startTime, null)
-        }, delay)
+        }, delayTicks)
     }
 
     // =========================================================================
@@ -396,10 +405,10 @@ class RegenManager(private val plugin: OraWorldRegen) {
         triggeredBy: String, startTime: Instant, backupPath: String?,
         reason: String
     ) {
-        task.status   = RegenStatus.FAILED
+        task.status     = RegenStatus.FAILED
         task.failReason = reason
-        val endTime   = Instant.now()
-        val elapsed   = endTime.epochSecond - startTime.epochSecond
+        val endTime     = Instant.now()
+        val elapsed     = endTime.epochSecond - startTime.epochSecond
 
         plugin.whitelistManager.disableBlock()
         activeTasks.remove(worldName)
