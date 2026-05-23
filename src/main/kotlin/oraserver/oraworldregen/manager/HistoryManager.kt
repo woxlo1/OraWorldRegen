@@ -2,6 +2,7 @@ package oraserver.oraworldregen.manager
 
 import oraserver.oraworldregen.OraWorldRegen
 import oraserver.oraworldregen.model.RegenHistory
+import oraserver.orapluginapi.scheduler.OraScheduler
 import org.bukkit.configuration.file.YamlConfiguration
 import java.io.File
 import java.time.ZoneId
@@ -14,7 +15,7 @@ class HistoryManager(private val plugin: OraWorldRegen) {
 
     private val historyFile = File(plugin.dataFolder, "history.yml")
     private val logFile     = File(plugin.dataFolder, "regen.log")
-    private val maxHistory  = 200   // YAMLに保持する最大件数
+    private val maxHistory  = 200
 
     private val histories = ArrayDeque<RegenHistory>()
 
@@ -40,9 +41,7 @@ class HistoryManager(private val plugin: OraWorldRegen) {
 
     fun add(history: RegenHistory) {
         histories.addLast(history)
-        // 上限を超えたら古いものから削除
         while (histories.size > maxHistory) histories.removeFirst()
-
         saveAsync(history)
     }
 
@@ -50,23 +49,19 @@ class HistoryManager(private val plugin: OraWorldRegen) {
     // 取得
     // -------------------------------------------------------------------------
 
-    /** 全履歴を新しい順で返す */
     fun getAll(): List<RegenHistory> = histories.toList().reversed()
 
-    /** 指定ワールドの履歴を新しい順で返す */
     fun getByWorld(worldName: String): List<RegenHistory> =
         histories.filter { it.worldName == worldName }.reversed()
 
-    /** 最新 n 件を返す */
     fun getRecent(n: Int = 10): List<RegenHistory> = getAll().take(n)
 
     // -------------------------------------------------------------------------
-    // 保存
+    // 保存 — OraScheduler.async を使用
     // -------------------------------------------------------------------------
 
     private fun saveAsync(latest: RegenHistory) {
-        plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
-            // history.yml
+        OraScheduler.async(plugin) {
             try {
                 val yaml = YamlConfiguration()
                 yaml.set("history", histories.map { it.toMap() })
@@ -76,14 +71,13 @@ class HistoryManager(private val plugin: OraWorldRegen) {
                 plugin.logger.warning("履歴YAMLの保存に失敗: ${e.message}")
             }
 
-            // regen.log（追記）
             try {
                 logFile.parentFile?.mkdirs()
                 logFile.appendText(latest.toConfigString() + "\n")
             } catch (e: Exception) {
                 plugin.logger.warning("ログファイルの書き込みに失敗: ${e.message}")
             }
-        })
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -94,8 +88,7 @@ class HistoryManager(private val plugin: OraWorldRegen) {
         val fmt = DateTimeFormatter.ofPattern("MM/dd HH:mm").withZone(ZoneId.of("Asia/Tokyo"))
         val lines = mutableListOf<String>()
         lines += "§e${fmt.format(h.startTime)}  §f${h.worldName}"
-        lines += "  §7時間: §f${h.durationSeconds}秒  " +
-                 "トリガー: §f${h.triggeredBy}"
+        lines += "  §7時間: §f${h.durationSeconds}秒  トリガー: §f${h.triggeredBy}"
         if (h.success) {
             lines += "  §a✔ 成功"
         } else {

@@ -3,6 +3,7 @@ package oraserver.oraworldregen.manager
 import oraserver.oraworldregen.OraWorldRegen
 import oraserver.oraworldregen.model.GateConfig
 import oraserver.oraworldregen.model.GateFacing
+import oraserver.orapluginapi.scheduler.OraScheduler
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.Material
@@ -15,8 +16,6 @@ import java.io.File
  *
  * ゲートはワールドのスポーン地点 + offset を原点として、
  * size（width × height）と facing から座標を自動計算して配置します。
- *
- * Multiverse-Portals が存在しない環境向けに /mv reload でリロードします。
  */
 class GateManager(private val plugin: OraWorldRegen) {
 
@@ -45,9 +44,9 @@ class GateManager(private val plugin: OraWorldRegen) {
                 writeToPortalsYml(gate, world, origin)
                 plugin.logger.info(
                     "[Gate] '${gate.name}' 生成完了 " +
-                    "(facing=${gate.facing}, size=${gate.width}x${gate.height}, " +
-                    "origin=${origin.blockX},${origin.blockY},${origin.blockZ}, " +
-                    "dest=${gate.destination})"
+                            "(facing=${gate.facing}, size=${gate.width}x${gate.height}, " +
+                            "origin=${origin.blockX},${origin.blockY},${origin.blockZ}, " +
+                            "dest=${gate.destination})"
                 )
             } catch (e: Exception) {
                 plugin.logger.severe("[Gate] '${gate.name}' の生成エラー: ${e.message}")
@@ -55,7 +54,11 @@ class GateManager(private val plugin: OraWorldRegen) {
             }
         }
 
-        reloadPortals()
+        // Multiverse を /mv reload でリロード（40tick = 2秒後）
+        // OraScheduler.delay を使用
+        OraScheduler.delay(delay = 40L, plugin = plugin) {
+            reloadPortals()
+        }
     }
 
     // =========================================================================
@@ -73,9 +76,8 @@ class GateManager(private val plugin: OraWorldRegen) {
 
     /**
      * facing と size から内側範囲の2点（min/max）を返す。
-     * - NORTH/SOUTH: X方向に width-1 だけ広がる（Z固定）
-     * - EAST/WEST  : Z方向に width-1 だけ広がる（X固定）
-     * - 高さは常にY方向
+     * - NORTH/SOUTH: X方向に広がる（Z固定）
+     * - EAST/WEST  : Z方向に広がる（X固定）
      */
     private fun calcInnerBounds(origin: Location, gate: GateConfig): Pair<Location, Location> {
         val ox = origin.blockX; val oy = origin.blockY; val oz = origin.blockZ
@@ -84,10 +86,10 @@ class GateManager(private val plugin: OraWorldRegen) {
 
         return if (gate.facing.expandsAlongX) {
             Location(origin.world, ox.toDouble(), oy.toDouble(), oz.toDouble()) to
-            Location(origin.world, (ox + w).toDouble(), (oy + h).toDouble(), oz.toDouble())
+                    Location(origin.world, (ox + w).toDouble(), (oy + h).toDouble(), oz.toDouble())
         } else {
             Location(origin.world, ox.toDouble(), oy.toDouble(), oz.toDouble()) to
-            Location(origin.world, ox.toDouble(), (oy + h).toDouble(), (oz + w).toDouble())
+                    Location(origin.world, ox.toDouble(), (oy + h).toDouble(), (oz + w).toDouble())
         }
     }
 
@@ -114,7 +116,6 @@ class GateManager(private val plugin: OraWorldRegen) {
 
         // フレーム（外側1ブロック）
         if (gate.facing.expandsAlongX) {
-            // Z固定 → X方向に広がるゲート
             val z = minZ
             for (x in (minX - 1)..(maxX + 1)) {
                 world.getBlockAt(x, minY - 1, z).type = frameMat
@@ -125,7 +126,6 @@ class GateManager(private val plugin: OraWorldRegen) {
                 world.getBlockAt(maxX + 1, y, z).type = frameMat
             }
         } else {
-            // X固定 → Z方向に広がるゲート
             val x = minX
             for (z in (minZ - 1)..(maxZ + 1)) {
                 world.getBlockAt(x, minY - 1, z).type = frameMat
@@ -139,7 +139,7 @@ class GateManager(private val plugin: OraWorldRegen) {
 
         plugin.logger.info(
             "[Gate] '${gate.name}' ブロック配置: " +
-            "inner=($minX,$minY,$minZ)-($maxX,$maxY,$maxZ), facing=${gate.facing}"
+                    "inner=($minX,$minY,$minZ)-($maxX,$maxY,$maxZ), facing=${gate.facing}"
         )
     }
 
@@ -167,7 +167,7 @@ class GateManager(private val plugin: OraWorldRegen) {
 
         val (min, max) = calcInnerBounds(origin, gate)
         val locationStr = "${min.blockX},${min.blockY},${min.blockZ}:" +
-                          "${max.blockX},${max.blockY},${max.blockZ}"
+                "${max.blockX},${max.blockY},${max.blockZ}"
 
         yaml.set("$key.world",              gate.worldName)
         yaml.set("$key.location",           locationStr)
@@ -183,18 +183,16 @@ class GateManager(private val plugin: OraWorldRegen) {
     }
 
     // =========================================================================
-    // リロード（/mv reload）
+    // Multiverse リロード
     // =========================================================================
 
     private fun reloadPortals() {
-        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
-            try {
-                plugin.server.dispatchCommand(plugin.server.consoleSender, "mv reload")
-                plugin.logger.info("[Gate] Multiverse をリロードしました (/mv reload)")
-            } catch (e: Exception) {
-                plugin.logger.warning("[Gate] /mv reload 失敗: ${e.message}")
-            }
-        }, 40L)
+        try {
+            plugin.server.dispatchCommand(plugin.server.consoleSender, "mv reload")
+            plugin.logger.info("[Gate] Multiverse をリロードしました (/mv reload)")
+        } catch (e: Exception) {
+            plugin.logger.warning("[Gate] /mv reload 失敗: ${e.message}")
+        }
     }
 
     // =========================================================================

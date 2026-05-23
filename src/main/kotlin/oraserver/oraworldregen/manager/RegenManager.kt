@@ -5,10 +5,10 @@ import oraserver.oraworldregen.model.RegenHistory
 import oraserver.oraworldregen.model.RegenStatus
 import oraserver.oraworldregen.model.RegenTask
 import oraserver.oraworldregen.model.WorldRegenConfig
+import oraserver.orapluginapi.scheduler.OraRepeatingTask
+import oraserver.orapluginapi.scheduler.OraScheduler
 import org.bukkit.Bukkit
-import org.bukkit.Location
 import org.bukkit.WorldBorder
-import org.bukkit.scheduler.BukkitTask
 import java.io.File
 import java.io.IOException
 import java.nio.file.FileVisitResult
@@ -17,18 +17,17 @@ import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 import java.time.Instant
-import java.util.UUID
 
 class RegenManager(private val plugin: OraWorldRegen) {
 
     /** worldName -> 実行中タスク */
-    private val activeTasks    = HashMap<String, RegenTask>()
-    /** worldName -> カウントダウン BukkitTask */
-    private val countdownTasks = HashMap<String, BukkitTask>()
+    private val activeTasks         = HashMap<String, RegenTask>()
+    /** worldName -> カウントダウン OraRepeatingTask のキャンセル用ラムダ */
+    private val countdownCancellers = HashMap<String, () -> Unit>()
     /** 直列実行キュー（worldName） */
-    private val regenQueue     = ArrayDeque<Pair<String, String>>()
+    private val regenQueue          = ArrayDeque<Pair<String, String>>()
     /** 現在キュー処理中かどうか */
-    private var isProcessingQueue = false
+    private var isProcessingQueue   = false
 
     val tasks: Map<String, RegenTask> get() = activeTasks.toMap()
 
@@ -86,7 +85,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
 
         if (task.status != RegenStatus.COUNTDOWN) return false
 
-        countdownTasks.remove(worldName)?.cancel()
+        countdownCancellers.remove(worldName)?.invoke()
         activeTasks.remove(worldName)
         broadcast("§e${worldName} §fの再生成をキャンセルしました。")
 
@@ -117,7 +116,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
     }
 
     // =========================================================================
-    // カウントダウン
+    // カウントダウン — OraScheduler.repeat を使用
     // =========================================================================
 
     private fun runCountdown(
@@ -128,23 +127,32 @@ class RegenManager(private val plugin: OraWorldRegen) {
         val notifyAt = plugin.configManager.notifyAtSeconds
         var remaining = config.countdownSeconds
 
-        val bt = Bukkit.getScheduler().runTaskTimer(plugin, Runnable {
+        val repeatingTask = OraScheduler.repeat(
+            period = 20L,
+            delay  = 0L,
+            plugin = plugin
+        ) { rt ->
             if (remaining <= 0) {
-                countdownTasks.remove(worldName)?.cancel()
+                rt.cancel()
+                countdownCancellers.remove(worldName)
                 executeRegen(worldName, config, task, triggeredBy)
-                return@Runnable
+                return@repeat
             }
             if (notifyAt.contains(remaining)) {
                 broadcast("§e${worldName} §fの再生成まで §c§l${remaining}秒！")
                 val stay = if (remaining <= 10) 25 else 15
                 Bukkit.getOnlinePlayers().forEach { p ->
-                    p.sendTitle("§c§l${remaining}", "§e${worldName} のワールドが再生成されます", 5, stay, 5)
+                    p.sendTitle(
+                        "§c§l${remaining}",
+                        "§e${worldName} のワールドが再生成されます",
+                        5, stay, 5
+                    )
                 }
             }
             remaining--
-        }, 0L, 20L)
+        }
 
-        countdownTasks[worldName] = bt
+        countdownCancellers[worldName] = { repeatingTask.cancel() }
     }
 
     // =========================================================================
@@ -155,8 +163,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
         worldName: String, config: WorldRegenConfig,
         task: RegenTask, triggeredBy: String
     ) {
-        // ── 二重実行ガード ──────────────────────────────────────────────────
-        // cancelRegen などで既に activeTasks から消えていたら何もしない
+        // 二重実行ガード
         if (!activeTasks.containsKey(worldName)) {
             plugin.logger.warning("[$worldName] executeRegen: タスクが存在しません。スキップします。")
             isProcessingQueue = false
@@ -177,12 +184,12 @@ class RegenManager(private val plugin: OraWorldRegen) {
         teleportAll(worldName, config, task)
 
         // プレイヤー転送完了を待って次フェーズへ（2tick後）
-        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+        OraScheduler.delay(delay = 2L, plugin = plugin) {
             doBackupPhase(worldName, config, task, triggeredBy, startTime)
-        }, 2L)
+        }
     }
 
-    // ── フェーズ分割: バックアップ ──────────────────────────────────────────
+    // ── フェーズ: バックアップ ──────────────────────────────────────────────
 
     private fun doBackupPhase(
         worldName: String, config: WorldRegenConfig,
@@ -192,59 +199,55 @@ class RegenManager(private val plugin: OraWorldRegen) {
             task.status = RegenStatus.BACKING_UP
             broadcast("§eバックアップを作成しています...")
 
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+            OraScheduler.async(plugin) {
                 val backupPath = plugin.backupManager.backup(config)
 
-                Bukkit.getScheduler().runTask(plugin, Runnable {
+                OraScheduler.sync(plugin) {
                     if (backupPath != null) {
                         broadcast("§aバックアップ完了: §7${File(backupPath).name}")
                     } else {
                         broadcast("§cバックアップに失敗しましたが、再生成を続行します。")
                     }
                     doUnloadAndDeletePhase(worldName, config, task, triggeredBy, startTime, backupPath)
-                })
-            })
+                }
+            }
         } else {
-            // バックアップ不要の場合は直接次フェーズへ
             doUnloadAndDeletePhase(worldName, config, task, triggeredBy, startTime, null)
         }
     }
 
-    // ── フェーズ分割: アンロード → 削除 ────────────────────────────────────
+    // ── フェーズ: アンロード → 削除 ─────────────────────────────────────────
 
     private fun doUnloadAndDeletePhase(
         worldName: String, config: WorldRegenConfig,
         task: RegenTask, triggeredBy: String,
         startTime: Instant, backupPath: String?
     ) {
-        // アンロード（メインスレッド）
         task.status = RegenStatus.UNLOADING
         plugin.logger.info("[$worldName] Multiverse アンロード中...")
         plugin.multiverseHook.unloadWorld(config.multiverseWorldName)
 
-        // 削除（非同期）
         task.status = RegenStatus.DELETING
         broadcast("§cワールドデータを削除中...")
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+        OraScheduler.async(plugin) {
             val worldFolder = File(Bukkit.getWorldContainer(), config.multiverseWorldName)
             try {
                 deleteDirectory(worldFolder.toPath())
             } catch (e: Exception) {
-                Bukkit.getScheduler().runTask(plugin, Runnable {
+                OraScheduler.sync(plugin) {
                     failRegen(worldName, task, triggeredBy, startTime, backupPath, "フォルダ削除失敗: ${e.message}")
-                })
-                return@Runnable
+                }
+                return@async
             }
 
-            // 削除完了 → メインスレッドで再生成フェーズへ
-            Bukkit.getScheduler().runTask(plugin, Runnable {
+            OraScheduler.sync(plugin) {
                 doCreatePhase(worldName, config, task, triggeredBy, startTime, backupPath)
-            })
-        })
+            }
+        }
     }
 
-    // ── フェーズ分割: ワールド再生成 ────────────────────────────────────────
+    // ── フェーズ: ワールド再生成 ─────────────────────────────────────────────
 
     private fun doCreatePhase(
         worldName: String, config: WorldRegenConfig,
@@ -260,22 +263,18 @@ class RegenManager(private val plugin: OraWorldRegen) {
             return
         }
 
-        // ワールドボーダー設定
         if (config.borderEnabled) {
             task.status = RegenStatus.SETTING_BORDER
             applyWorldBorder(config)
         }
 
-        // ゲート生成（スポーン地点基準）
         plugin.gateManager.buildGatesForWorld(worldName)
 
-        // 完了後コマンド
         if (config.postRegenCommands.isNotEmpty()) {
             task.status = RegenStatus.POST_COMMANDS
             executePostCommands(config)
         }
 
-        // プレイヤー帰還
         if (config.returnPlayersAfterRegen && task.playerReturnLocations.isNotEmpty()) {
             task.status = RegenStatus.RETURNING
             returnPlayers(config, task)
@@ -308,7 +307,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
     }
 
     // =========================================================================
-    // 完了後コマンド
+    // 完了後コマンド実行
     // =========================================================================
 
     private fun executePostCommands(config: WorldRegenConfig) {
@@ -327,7 +326,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
     }
 
     // =========================================================================
-    // プレイヤー帰還
+    // プレイヤー帰還 — OraScheduler.delay を使用
     // =========================================================================
 
     private fun returnPlayers(config: WorldRegenConfig, task: RegenTask) {
@@ -336,12 +335,12 @@ class RegenManager(private val plugin: OraWorldRegen) {
 
         broadcast("§f${config.returnDelay}秒後にプレイヤーを元の場所へ戻します...")
 
-        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+        OraScheduler.delay(delay = delayTicks, plugin = plugin) {
             val regenWorld = Bukkit.getWorld(config.multiverseWorldName)
             if (regenWorld == null) {
                 plugin.logger.warning("[Return] ワールドが見つかりません: ${config.multiverseWorldName}")
                 finishRegen(worldName, task, "unknown", task.startTime, null)
-                return@Runnable
+                return@delay
             }
 
             var returnCount = 0
@@ -360,7 +359,7 @@ class RegenManager(private val plugin: OraWorldRegen) {
 
             if (returnCount > 0) broadcast("§a${returnCount}人のプレイヤーを元の場所へ戻しました。")
             finishRegen(worldName, task, "unknown", task.startTime, null)
-        }, delayTicks)
+        }
     }
 
     // =========================================================================
@@ -489,8 +488,8 @@ class RegenManager(private val plugin: OraWorldRegen) {
     }
 
     fun shutdown() {
-        countdownTasks.values.forEach { it.cancel() }
-        countdownTasks.clear()
+        countdownCancellers.values.forEach { it.invoke() }
+        countdownCancellers.clear()
         activeTasks.clear()
         regenQueue.clear()
         isProcessingQueue = false

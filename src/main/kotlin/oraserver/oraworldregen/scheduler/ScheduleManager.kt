@@ -2,14 +2,15 @@ package oraserver.oraworldregen.scheduler
 
 import oraserver.oraworldregen.OraWorldRegen
 import oraserver.oraworldregen.model.ScheduleEntry
-import org.bukkit.scheduler.BukkitTask
+import oraserver.orapluginapi.scheduler.OraRepeatingTask
+import oraserver.orapluginapi.scheduler.OraScheduler
 import java.time.ZoneId
 
 class ScheduleManager(private val plugin: OraWorldRegen) {
 
     /** worldName → スケジュールエントリ一覧 */
-    private val schedules = HashMap<String, List<ScheduleEntry>>()
-    private var pollingTask: BukkitTask? = null
+    private val schedules   = HashMap<String, List<ScheduleEntry>>()
+    private var pollingTask: OraRepeatingTask? = null
 
     fun loadAll() {
         schedules.clear()
@@ -39,10 +40,14 @@ class ScheduleManager(private val plugin: OraWorldRegen) {
             return
         }
 
-        // 毎分 (1200 ticks) チェック
-        pollingTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable {
+        // OraScheduler.repeat で毎分（1200 ticks）チェック
+        pollingTask = OraScheduler.repeat(
+            period = 1200L,
+            delay  = 0L,
+            plugin = plugin
+        ) {
             checkSchedules()
-        }, 0L, 1200L)
+        }
 
         plugin.logger.info("スケジュールポーリング開始 (${schedules.size} ワールド)")
     }
